@@ -1,0 +1,95 @@
+# Changelog
+
+All notable changes to AM-Corp will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
+## [Unreleased]
+
+### Added
+- Initial project structure and documentation
+- Product Requirements Document (PRD)
+- System architecture documentation
+- Agent specifications (Recon, Vuln, Intel, Report)
+- Security documentation and guidelines
+- Development setup guide
+- Deployment guide
+
+### Changed
+- N/A
+
+### Deprecated
+- N/A
+
+### Removed
+- N/A
+
+### Fixed
+- N/A
+
+### Security
+- N/A
+
+---
+
+## [0.1.0] - YYYY-MM-DD
+
+### Added
+- 🎉 Initial release
+- Core infrastructure setup
+- Discord bot integration
+- n8n workflow automation
+- CrewAI orchestration layer
+- Recon Agent with Nmap/Subfinder integration
+- Basic command parsing
+
+---
+
+<!-- 
+Template for new releases:
+
+## [X.Y.Z] - YYYY-MM-DD
+
+### Added
+- New features
+
+### Changed
+- Changes in existing functionality
+
+### Deprecated
+- Soon-to-be removed features
+
+### Removed
+- Removed features
+
+### Fixed
+- Bug fixes
+
+### Security
+- Security fixes
+-->
+
+---
+
+## Version History
+
+| Version | Date | Highlights |
+|---------|------|------------|
+| 0.1.0 | TBD | Initial release, core infrastructure |
+
+---
+
+## Release Notes Format
+
+Each release should include:
+
+1. **Summary**: Brief description of the release
+2. **Breaking Changes**: Any changes that require user action
+3. **New Features**: Detailed list of new capabilities
+4. **Bug Fixes**: Issues resolved
+5. **Known Issues**: Outstanding problems
+6. **Upgrade Instructions**: How to update from previous version
+
