@@ -17,9 +17,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Security documentation and guidelines
 - Development setup guide
 - Deployment guide
+- Python project structure (`src/`, `tests/`, `config/`, etc.)
+- Configuration management with Pydantic Settings (`config.py`)
+- Structured logging with structlog (`logging.py`)
+- Application entry point (`main.py`)
+- Requirements.txt with CrewAI and dependencies
+- `.env.example` environment template
+- `.gitignore` for Python/security projects
 
 ### Changed
-- N/A
+- **AGENTS.md**: Added agent names and conversational personalities
+  - 🔍 Randy Recon - Reconnaissance Specialist
+  - ⚠️ Victor Vuln - Vulnerability Analyst
+  - 🧠 Ivy Intel - Threat Intelligence Analyst
+  - 📊 Rita Report - Security Report Analyst
+- **ARCHITECTURE.md**: Updated to reflect conversational interaction model
+- **am-corp_PRD.md**: Revised vision for conversational AI team
+- **phase-1-infrastructure.md**: Updated tasks for conversational bot approach
+- **ENV_TEMPLATE.md**: Added separate webhook URLs for each channel
 
 ### Deprecated
 - N/A
