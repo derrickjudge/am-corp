@@ -31,20 +31,31 @@ class AgentBotConfig:
 
 
 class AgentBot(discord.Client):
-    """A Discord bot for a specific agent persona."""
+    """
+    A Discord bot for a specific agent persona.
+    
+    These bots are for SENDING messages only - they do NOT process commands.
+    Command processing is handled exclusively by the main AMCorpBot.
+    """
 
     def __init__(self, config: AgentBotConfig) -> None:
-        intents = discord.Intents.default()
-        intents.message_content = True
-        intents.guilds = True
-        
-        super().__init__(intents=intents)
-        
+        # Store config BEFORE calling super().__init__()
         self.config = config
         self.agent_chat_channel: discord.TextChannel | None = None
         self.results_channel: discord.TextChannel | None = None
         self.alerts_channel: discord.TextChannel | None = None
         self._ready = asyncio.Event()
+        
+        # Absolute minimal intents - agent bots only need guild access to send messages
+        intents = discord.Intents.none()
+        intents.guilds = True  # Required to get channel references
+        # Everything else is disabled - no message events, no reactions, nothing
+        
+        super().__init__(intents=intents)
+    
+    async def on_message(self, message: discord.Message) -> None:
+        """Agent bots do NOT process messages. This is a no-op safety measure."""
+        pass
 
     async def on_ready(self) -> None:
         """Called when the bot is connected and ready."""

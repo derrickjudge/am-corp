@@ -11,6 +11,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Initial project structure and documentation
+- **Docker containerization** (2026-01-01)
+  - `Dockerfile` - Python 3.12 + security tools (dig, whois, nmap)
+  - `docker-compose.yml` - Service definition with volumes and resource limits
+  - `.dockerignore` - Optimized build context
+  - Container runs as non-root user for security
+  - gRPC SSL certificate fix for Gemini API
+- **Randy Recon agent** (2026-01-01)
+  - `src/agents/randy_recon.py` - Full reconnaissance agent implementation
+  - `src/tools/recon_tools.py` - Tool wrappers for dig, whois, nmap
+  - Gemini-powered conversational responses with Texas personality
+  - Real-time progress updates to Discord
+  - Structured final summary with bulleted findings
+- **Scope approval caching** (2026-01-01)
+  - `src/discord_bot/scope_cache.py` - Persistent scope approval storage
+  - 12-hour approval cache with file-based persistence
+  - Survives bot restarts
+- **ADR-002: Natural Language Agent Interaction** (2026-01-01)
+  - Documented future feature for @mention-based agent interaction
+  - Intent parsing architecture
+  - Phased implementation plan
+
+### Changed
+- **requirements.txt**: Switched from `google-generativeai` to `google-genai` (deprecated library)
+- **nmap scan options**: Updated to `-sT -T4 --top-ports 500 -sV -n -Pn --open`
+  - Scans top 500 ports instead of custom list
+  - Added service version detection (`-sV`)
+  - Added DNS resolution skip (`-n`) for speed
+- **WHOIS lookup**: Now extracts base domain from subdomains (scanme.nmap.org → nmap.org)
+- **.cursorrules**: Added system modifications rule (no installs without consent)
 - Product Requirements Document (PRD)
 - System architecture documentation
 - Agent specifications (Recon, Vuln, Intel, Report)

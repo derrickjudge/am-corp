@@ -10,6 +10,7 @@ from discord.ext import commands
 from src.utils.config import settings
 from src.utils.logging import audit_log, get_logger
 
+from .agent_bots import send_as_randy
 from .embeds import (
     create_blocked_embed,
     create_error_embed,
@@ -18,9 +19,9 @@ from .embeds import (
     create_scope_confirmation_embed,
     create_status_embed,
 )
+from .scope_cache import get_scope_cache
 from .validators import validate_target
 from .webhooks import post_alert
-from .agent_bots import send_as_randy
 
 logger = get_logger(__name__)
 
@@ -195,7 +196,18 @@ async def handle_scan(
 ) -> None:
     """
     Handle scan commands with validation and confirmation flow.
+    
+    Scope approvals are cached for 12 hours to avoid repeated confirmations.
     """
+    # Debug: Track invocations
+    logger.info(
+        "handle_scan called",
+        target=target,
+        scan_type=scan_type,
+        message_id=ctx.message.id,
+        bot_user=str(bot.user),
+    )
+    
     # Check if already running a job
     if bot.active_job:
         await ctx.send(
@@ -220,8 +232,11 @@ async def handle_scan(
             )
         return
 
-    if result.requires_confirmation:
-        # Send confirmation request
+    # Check scope cache for recent approval (12hr window)
+    scope_cache = get_scope_cache()
+    
+    if result.requires_confirmation and not scope_cache.is_approved(target):
+        # Need confirmation - send request
         embed = create_scope_confirmation_embed(target)
         message = await ctx.send(embed=embed)
 
@@ -242,8 +257,17 @@ async def handle_scan(
             user=str(ctx.author),
         )
         return
+    
+    # Log if using cached approval
+    if result.requires_confirmation and scope_cache.is_approved(target):
+        remaining = scope_cache.time_remaining(target)
+        hours_left = remaining.total_seconds() / 3600 if remaining else 0
+        logger.info(
+            f"Using cached scope approval for {target}",
+            hours_remaining=f"{hours_left:.1f}",
+        )
 
-    # Target is approved, start scan
+    # Target is approved (either pre-approved, or cached), start scan
     await ctx.send(embed=create_scan_started_embed(target, scan_type))
     await bot.start_scan(target, scan_type, ctx.channel)
 

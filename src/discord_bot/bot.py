@@ -23,8 +23,9 @@ from .embeds import (
     create_status_embed,
 )
 from .validators import validate_command, validate_target
-from .webhooks import post_alert
 from .agent_bots import send_as_randy
+from .scope_cache import get_scope_cache
+from .webhooks import post_alert
 
 logger = get_logger(__name__)
 
@@ -97,12 +98,26 @@ class AMCorpBot(commands.Bot):
         if not message.content.startswith("!"):
             return
 
+        # Dedupe check - prevent processing the same message twice
+        if hasattr(self, '_processed_messages'):
+            if message.id in self._processed_messages:
+                logger.warning(f"Duplicate message detected: {message.id}")
+                return
+            self._processed_messages.add(message.id)
+            # Keep set small - only track last 100 messages
+            if len(self._processed_messages) > 100:
+                self._processed_messages = set(list(self._processed_messages)[-50:])
+        else:
+            self._processed_messages = {message.id}
+
         # Log the command
         logger.info(
             "Command received",
             command=message.content,
             user=str(message.author),
             channel=str(message.channel),
+            message_id=message.id,
+            bot_user=str(self.user),
         )
 
         audit_log(
@@ -132,17 +147,25 @@ class AMCorpBot(commands.Bot):
         pending = self.pending_confirmations[message_id]
 
         if str(reaction.emoji) == "✅":
-            # Approved
+            # Approved - add to scope cache (12hr TTL)
+            target = pending.get("target")
+            scope_cache = get_scope_cache()
+            scope_cache.add_approval(
+                target=target,
+                approved_by=str(user),
+                scan_type=pending.get("scan_type", "any"),
+            )
+            
             logger.info(
                 "Scan approved via reaction",
                 user=str(user),
-                target=pending.get("target"),
+                target=target,
             )
 
             audit_log(
                 action="scan_approved",
                 user=str(user),
-                target=pending.get("target"),
+                target=target,
                 result="approved",
             )
 
@@ -151,7 +174,7 @@ class AMCorpBot(commands.Bot):
 
             # Start the scan
             await self.start_scan(
-                pending["target"],
+                target,
                 pending["scan_type"],
                 reaction.message.channel,
             )
@@ -177,30 +200,55 @@ class AMCorpBot(commands.Bot):
         """
         Start a scan on the given target.
 
-        For now, this just has Randy announce the scan.
-        In the future, this will trigger the full CrewAI pipeline.
+        Routes to appropriate agent(s) based on scan_type:
+        - recon: Randy only
+        - vuln: Randy → Victor (future)
+        - intel: Ivy only (future)
+        - full: Randy → Victor → Ivy → Rita (future)
         """
         self.active_job = {
             "target": target,
             "scan_type": scan_type,
-            "phase": "recon",
+            "phase": "starting",
             "started": datetime.now(timezone.utc).isoformat(),
+            "findings": {},
         }
 
-        # Have Randy announce the scan
-        await post_as_randy(
-            f"Got it! Starting {scan_type} scan on `{target}`. "
-            "I'll report my findings as I go."
-        )
-
-        # TODO: Actually run the CrewAI agents here
-        # For now, just simulate with a message
-        await asyncio.sleep(2)
-
-        await post_as_randy(
-            f"Beginning subdomain enumeration on `{target}`... "
-            "This is a simulation for now - full agent integration coming soon!"
-        )
+        try:
+            if scan_type in ("recon", "full"):
+                # Run Randy's reconnaissance
+                self.active_job["phase"] = "recon"
+                
+                from src.agents.randy_recon import run_recon
+                result = await run_recon(target)
+                
+                # Store findings
+                self.active_job["findings"]["recon"] = result.raw_findings
+                
+                if scan_type == "full":
+                    # TODO: Chain to Victor, Ivy, Rita
+                    await send_as_randy(
+                        "Recon's done! Once Victor's up and runnin', he'll take it from here. "
+                        "For now, that's all I got for ya, partner."
+                    )
+            
+            elif scan_type == "vuln":
+                await channel.send("⚠️ Victor Vuln is not yet implemented. Coming soon!")
+            
+            elif scan_type == "intel":
+                await channel.send("🧠 Ivy Intel is not yet implemented. Coming soon!")
+            
+            # Mark job as complete
+            self.active_job["phase"] = "complete"
+            
+        except Exception as e:
+            logger.error(f"Scan failed: {e}", target=target, scan_type=scan_type)
+            await post_alert(
+                f"Scan failed on {target}: {str(e)[:200]}",
+                severity="error",
+            )
+            self.active_job = None
+            raise
 
     async def on_command_error(
         self, ctx: commands.Context, error: commands.CommandError

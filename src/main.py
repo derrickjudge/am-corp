@@ -132,7 +132,8 @@ async def main() -> None:
             logger.info("Shutdown requested")
         finally:
             # Clean up
-            await agent_manager.stop_all()
+            if agent_manager:
+                await agent_manager.stop_all()
             if main_bot and not main_bot.is_closed():
                 await main_bot.close()
     else:
@@ -143,7 +144,8 @@ async def main() -> None:
         except KeyboardInterrupt:
             logger.info("Shutdown requested")
         finally:
-            await agent_manager.stop_all()
+            if agent_manager:
+                await agent_manager.stop_all()
 
     audit_log(action="application_stopped", user="system", result="success")
 

@@ -1,0 +1,50 @@
+# =============================================================================
+# AM-Corp Docker Compose
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # AM-Corp Bot - Main Discord bot with all agents
+  # ---------------------------------------------------------------------------
+  am-corp-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: am-corp-bot
+    restart: unless-stopped
+    
+    # Environment from .env file
+    env_file:
+      - .env
+    
+    # Override specific env vars if needed
+    environment:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+    
+    # Persist data and logs
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    
+    # Network access for Discord API, Gemini API, and scanning
+    networks:
+      - am-corp-network
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  am-corp-network:
+    driver: bridge
+

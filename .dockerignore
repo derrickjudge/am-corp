@@ -1,0 +1,56 @@
+# =============================================================================
+# AM-Corp Docker Ignore
+# =============================================================================
+
+# Virtual environment
+venv/
+.venv/
+env/
+.env.local
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.cursor/
+
+# Git
+.git/
+.gitignore
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Documentation (not needed in container)
+docs/
+*.md
+!requirements.txt
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# Local data (mounted as volume instead)
+logs/*.log
+data/*.json
+
+# macOS
+.DS_Store
+
+# Secrets (should use env vars)
+.env
+*.pem
+*.key
+
