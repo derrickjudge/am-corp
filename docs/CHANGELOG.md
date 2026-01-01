@@ -24,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Requirements.txt with CrewAI and dependencies
 - `.env.example` environment template
 - `.gitignore` for Python/security projects
+- **Multi-bot Discord architecture** (2025-12-31)
+  - 5 separate Discord bots (AM Corp + Randy, Victor, Ivy, Rita)
+  - Each agent appears as separate Discord user
+  - `agent_bots.py` - Multi-bot manager with parallel startup
+  - `webhooks.py` - Fallback webhook messaging
+  - `validators.py` - Target security validation (.gov/.mil blocking)
+  - `embeds.py` - Rich Discord embed formatting
+  - `bot.py` - Main command handler bot
+  - `commands.py` - `!help`, `!status`, `!ping`, `!scan`, `!scope` commands
+  - `scripts/team_intro.py` - Agent introduction test script
 
 ### Changed
 - **AGENTS.md**: Added agent names and conversational personalities
@@ -35,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **am-corp_PRD.md**: Revised vision for conversational AI team
 - **phase-1-infrastructure.md**: Updated tasks for conversational bot approach
 - **ENV_TEMPLATE.md**: Added separate webhook URLs for each channel
+- **config.py**: Added agent bot token configuration
 
 ### Deprecated
 - N/A
