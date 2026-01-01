@@ -5,6 +5,7 @@ Multi-agent cybersecurity automation platform.
 """
 
 import asyncio
+import signal
 import sys
 from pathlib import Path
 
@@ -32,13 +33,27 @@ def validate_environment() -> bool:
     # Always warn about missing Discord token
     if not settings.discord_bot_token:
         logger.warning(
-            "DISCORD_BOT_TOKEN not set - bot functionality disabled"
+            "DISCORD_BOT_TOKEN not set - command bot disabled"
         )
+
+    # Check agent tokens
+    agent_tokens = {
+        "Randy": settings.discord_bot_token_randy,
+        "Victor": settings.discord_bot_token_victor,
+        "Ivy": settings.discord_bot_token_ivy,
+        "Rita": settings.discord_bot_token_rita,
+    }
+    
+    configured_agents = [name for name, token in agent_tokens.items() if token]
+    if configured_agents:
+        logger.info(f"Agent bots configured: {', '.join(configured_agents)}")
+    else:
+        logger.warning("No agent bot tokens configured - using webhooks only")
 
     # Always warn about missing Gemini key
     if not settings.gemini_api_key:
         logger.warning(
-            "GEMINI_API_KEY not set - agent functionality disabled"
+            "GEMINI_API_KEY not set - AI agent functionality disabled"
         )
 
     return True
@@ -94,28 +109,43 @@ async def main() -> None:
 
     logger.info("Environment validation passed")
 
-    # TODO: Initialize components
-    # - Discord bot
-    # - CrewAI agents
-    # - n8n integration
+    # Import bot components
+    from src.discord_bot.agent_bots import get_agent_manager
+    from src.discord_bot.bot import create_bot
+    from src.discord_bot.commands import setup_commands
 
-    logger.info(
-        "AM-Corp initialized successfully",
-        discord_configured=bool(settings.discord_bot_token),
-        gemini_configured=bool(settings.gemini_api_key),
-        scope_verification=settings.enable_scope_verification,
-    )
+    # Start agent bots first
+    agent_manager = get_agent_manager()
+    await agent_manager.start_all()
 
-    # Keep running (placeholder for actual bot/server loop)
-    logger.info("Ready for commands. Press Ctrl+C to exit.")
+    # Create and start main command bot
+    main_bot = None
+    if settings.discord_bot_token:
+        logger.info("Starting main command bot...")
+        main_bot = create_bot()
+        await setup_commands(main_bot)
 
-    try:
-        # In the future, this will run the Discord bot and other services
-        while True:
-            await asyncio.sleep(1)
-    except KeyboardInterrupt:
-        logger.info("Shutdown requested")
-        audit_log(action="application_stopped", user="system", result="success")
+        # Run the main bot (this blocks until bot is closed)
+        try:
+            await main_bot.start(settings.discord_bot_token)
+        except KeyboardInterrupt:
+            logger.info("Shutdown requested")
+        finally:
+            # Clean up
+            await agent_manager.stop_all()
+            if main_bot and not main_bot.is_closed():
+                await main_bot.close()
+    else:
+        logger.warning("Main bot not started (no token)")
+        # Keep running for agent bots
+        try:
+            await asyncio.Event().wait()  # Wait forever
+        except KeyboardInterrupt:
+            logger.info("Shutdown requested")
+        finally:
+            await agent_manager.stop_all()
+
+    audit_log(action="application_stopped", user="system", result="success")
 
 
 def run() -> None:
@@ -128,4 +158,3 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
-

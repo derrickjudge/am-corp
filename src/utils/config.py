@@ -25,8 +25,15 @@ class Settings(BaseSettings):
     # =========================================================================
     # Discord Configuration
     # =========================================================================
+    # Main bot token (command handler)
     discord_bot_token: str = Field(default="", description="Discord bot token")
     discord_guild_id: str = Field(default="", description="Discord server ID")
+
+    # Agent bot tokens (for multi-bot setup)
+    discord_bot_token_randy: str = Field(default="", description="Randy Recon bot token")
+    discord_bot_token_victor: str = Field(default="", description="Victor Vuln bot token")
+    discord_bot_token_ivy: str = Field(default="", description="Ivy Intel bot token")
+    discord_bot_token_rita: str = Field(default="", description="Rita Report bot token")
 
     # Channel IDs
     discord_channel_commands: str = Field(default="", description="Commands channel ID")
