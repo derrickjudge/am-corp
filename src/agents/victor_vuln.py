@@ -341,25 +341,54 @@ class VictorVuln:
     ) -> None:
         """Post vulnerability findings with appropriate detail."""
         
-        # Group critical/high for immediate attention
+        # Group by severity for appropriate handling
         critical_high = [v for v in vulns if v.get("severity") in ["critical", "high"]]
+        medium = [v for v in vulns if v.get("severity") == "medium"]
+        low_info = [v for v in vulns if v.get("severity") in ["low", "info", "unknown"]]
         
+        # Post critical/high findings with full details (limit to top 5)
         if critical_high:
-            # Alert about serious issues
-            for vuln in critical_high[:3]:  # Limit to top 3
+            for vuln in critical_high[:5]:
                 vuln_msg = self._format_vuln_message(vuln)
                 await self._post_message(vuln_msg)
                 await asyncio.sleep(0.5)
         
-        # Summary of others
-        medium_low = len(vulns) - len(critical_high)
-        if medium_low > 0:
-            other_msg = await self._generate_message(
-                f"Besides the critical/high findings, I found {medium_low} medium/low/info severity issues. "
-                f"Generate a brief message about these - they're worth reviewing but not urgent.",
-                fallback=f"Also found {medium_low} medium/low severity issues. Worth reviewing but not critical."
-            )
-            await self._post_message(other_msg)
+        # Post medium findings with full details (limit to top 5)
+        if medium:
+            if critical_high:
+                # Add a brief intro if we already posted critical/high
+                await self._post_message("Also found some medium severity issues worth reviewing:")
+                await asyncio.sleep(0.3)
+            
+            for vuln in medium[:5]:
+                vuln_msg = self._format_vuln_message(vuln)
+                await self._post_message(vuln_msg)
+                await asyncio.sleep(0.5)
+            
+            # If there are more than 5 medium findings, summarize the rest
+            if len(medium) > 5:
+                await self._post_message(
+                    f"...plus {len(medium) - 5} more medium severity findings. "
+                    f"Check the full report for details."
+                )
+        
+        # Summary of low/info (these are usually noise, just count them)
+        if low_info:
+            low_count = len([v for v in low_info if v.get("severity") == "low"])
+            info_count = len([v for v in low_info if v.get("severity") in ["info", "unknown"]])
+            
+            parts = []
+            if low_count:
+                parts.append(f"{low_count} low")
+            if info_count:
+                parts.append(f"{info_count} informational")
+            
+            if parts:
+                summary = " and ".join(parts)
+                await self._post_message(
+                    f"Additionally found {summary} severity items. "
+                    f"These are typically configuration recommendations rather than vulnerabilities."
+                )
     
     def _format_vuln_message(self, vuln: dict) -> str:
         """Format a single vulnerability finding for Discord."""
@@ -369,6 +398,9 @@ class VictorVuln:
         cve_id = vuln.get("cve_id", "")
         cvss = vuln.get("cvss_score")
         matched_at = vuln.get("matched_at", "")
+        description = vuln.get("description", "")
+        tags = vuln.get("tags", [])
+        references = vuln.get("reference", [])
         
         # Severity emoji
         severity_emoji = {
@@ -385,10 +417,26 @@ class VictorVuln:
             lines.append(f"  • CVE: `{cve_id}`")
         if cvss:
             lines.append(f"  • CVSS: `{cvss}`")
+        if description:
+            # Truncate long descriptions
+            desc_text = description[:200] + "..." if len(description) > 200 else description
+            lines.append(f"  • Description: {desc_text}")
         if matched_at:
             lines.append(f"  • Found at: `{matched_at[:80]}`")
         if template_id and not cve_id:
             lines.append(f"  • Template: `{template_id}`")
+        
+        # Show relevant tags (config issues, misconfigurations, etc.)
+        if tags:
+            relevant_tags = [t for t in tags[:5] if not t.startswith("cve-")]
+            if relevant_tags:
+                lines.append(f"  • Tags: {', '.join(relevant_tags)}")
+        
+        # Show first reference URL if available
+        if references and isinstance(references, list) and len(references) > 0:
+            first_ref = references[0]
+            if isinstance(first_ref, str) and first_ref.startswith("http"):
+                lines.append(f"  • Reference: {first_ref[:100]}")
         
         return "\n".join(lines)
     

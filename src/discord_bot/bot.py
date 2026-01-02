@@ -274,8 +274,8 @@ class AMCorpBot(commands.Bot):
             elif scan_type == "intel":
                 await channel.send("🧠 Ivy Intel is not yet implemented. Coming soon!")
             
-            # Mark job as complete
-            self.active_job["phase"] = "complete"
+            # Job completed successfully - clear active job
+            self.active_job = None
             
         except Exception as e:
             logger.error(f"Scan failed: {e}", target=target, scan_type=scan_type)
