@@ -153,18 +153,31 @@ class VictorVuln:
             
             return fallback if fallback else "Analyzing..."
     
-    async def run_vuln_scan(self, target: str, ports: list[dict] | None = None) -> VulnScanResult:
+    async def run_vuln_scan(
+        self, 
+        target: str, 
+        ports: list[dict] | None = None,
+        verbose: bool = False,
+    ) -> VulnScanResult:
         """
         Run vulnerability scan on a target.
         
         Args:
             target: Host to scan
             ports: Optional list of open ports from recon (for targeted scanning)
+            verbose: If True, output additional technical details
         
         Returns:
             VulnScanResult with all findings
         """
         logger.info(f"Starting vulnerability scan on {target}", agent=self.agent_id)
+        
+        # Verbose mode header
+        if verbose:
+            await self._post_message(
+                f"**[VERBOSE MODE]** Starting vuln scan on `{target}`\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            )
         
         audit_log(
             action="vuln_scan_started",
@@ -199,12 +212,34 @@ class VictorVuln:
         # Run Nuclei scan
         await asyncio.sleep(1)
         
-        scanning_msg = await self._generate_message(
-            f"You're running Nuclei vulnerability scanner on {target}. "
-            f"Generate a brief status message saying you're scanning.",
-            fallback=f"Running Nuclei scanner against {target}. This may take a few minutes..."
-        )
-        await self._post_message(scanning_msg)
+        # Default templates
+        templates = ["cves", "vulnerabilities", "misconfigurations", "exposures"]
+        severity = ["critical", "high", "medium"]
+        
+        if verbose:
+            # Show template selection reasoning
+            port_info = ""
+            if ports:
+                port_list = [f"{p.get('port')}/{p.get('service', '?')}" for p in ports[:5]]
+                port_info = f"\n**Ports from recon:** {', '.join(port_list)}"
+            
+            await self._post_message(
+                f"**Nuclei Scan Configuration**{port_info}\n"
+                f"**Templates:** {', '.join(templates)}\n"
+                f"**Severity filter:** {', '.join(severity)}\n"
+                f"**Rate limit:** 150 req/s\n"
+                "```\n"
+                f"nuclei -u https://{target} -severity {','.join(severity)} "
+                f"-tags {','.join(templates)} -jsonl -rate-limit 150\n"
+                "```"
+            )
+        else:
+            scanning_msg = await self._generate_message(
+                f"You're running Nuclei vulnerability scanner on {target}. "
+                f"Generate a brief status message saying you're scanning.",
+                fallback=f"Running Nuclei scanner against {target}. This may take a few minutes..."
+            )
+            await self._post_message(scanning_msg)
         
         result.nuclei_result = await nuclei_scan(target)
         

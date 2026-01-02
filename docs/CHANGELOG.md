@@ -36,6 +36,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Verbose mode (`-v`) for troubleshooting
   - Debug channel (toggleable) for technical details
   - Smart template selection based on Randy's findings
+- **`!config` command** (2026-01-02)
+  - `!config` - Shows overview of all agents
+  - `!config randy` - Randy's tools, nmap flags, timeout
+  - `!config victor` - Nuclei templates, severity filter, rate limits
+  - `!config ivy` - Planned capabilities (not yet implemented)
+  - `!config rita` - Planned capabilities (not yet implemented)
+  - Added to help menu
+- **Verbose mode** (2026-01-02)
+  - `-v` or `--verbose` flag for scan commands
+  - Shows exact commands being executed
+  - Displays template selection and configuration
+  - Works with `!scan`, `!recon`, `!vuln` commands
+- **Debug channel** (2026-01-02)
+  - `!debug` command to toggle debug output
+  - Posts technical details to dedicated debug channel
+  - Includes: commands, exit codes, timing, errors
+  - Configure with `DEBUG_CHANNEL_ENABLED` and `DISCORD_CHANNEL_DEBUG`
 - **Victor Vuln agent** (2026-01-02)
   - `src/agents/victor_vuln.py` - Vulnerability analyst implementation
   - `src/tools/vuln_tools.py` - Nuclei wrapper with severity parsing

@@ -177,6 +177,7 @@ class AMCorpBot(commands.Bot):
                 target,
                 pending["scan_type"],
                 reaction.message.channel,
+                verbose=pending.get("verbose", False),
             )
 
         elif str(reaction.emoji) == "❌":
@@ -196,6 +197,7 @@ class AMCorpBot(commands.Bot):
         target: str,
         scan_type: str,
         channel: discord.TextChannel,
+        verbose: bool = False,
     ) -> None:
         """
         Start a scan on the given target.
@@ -205,6 +207,12 @@ class AMCorpBot(commands.Bot):
         - vuln: Randy → Victor (future)
         - intel: Ivy only (future)
         - full: Randy → Victor → Ivy → Rita (future)
+        
+        Args:
+            target: Target to scan
+            scan_type: Type of scan
+            channel: Discord channel to post updates
+            verbose: If True, agents output additional technical details
         """
         self.active_job = {
             "target": target,
@@ -212,6 +220,7 @@ class AMCorpBot(commands.Bot):
             "phase": "starting",
             "started": datetime.now(timezone.utc).isoformat(),
             "findings": {},
+            "verbose": verbose,
         }
 
         try:
@@ -222,7 +231,7 @@ class AMCorpBot(commands.Bot):
                 self.active_job["phase"] = "recon"
                 
                 from src.agents.randy_recon import run_recon
-                recon_result = await run_recon(target)
+                recon_result = await run_recon(target, verbose=verbose)
                 
                 # Store findings
                 self.active_job["findings"]["recon"] = recon_result.raw_findings
@@ -236,7 +245,7 @@ class AMCorpBot(commands.Bot):
                     
                     # Pass open ports from recon to Victor
                     ports = recon_result.raw_findings.get("ports", [])
-                    vuln_result = await victor.run_vuln_scan(target, ports=ports)
+                    vuln_result = await victor.run_vuln_scan(target, ports=ports, verbose=verbose)
                     
                     self.active_job["findings"]["vuln"] = {
                         "critical": vuln_result.critical_count,
@@ -252,7 +261,7 @@ class AMCorpBot(commands.Bot):
                 
                 from src.agents.victor_vuln import get_victor
                 victor = get_victor()
-                vuln_result = await victor.run_vuln_scan(target)
+                vuln_result = await victor.run_vuln_scan(target, verbose=verbose)
                 
                 self.active_job["findings"]["vuln"] = {
                     "critical": vuln_result.critical_count,

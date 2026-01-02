@@ -39,8 +39,8 @@ def create_help_embed() -> discord.Embed:
     embed.add_field(
         name="🔍 Reconnaissance",
         value=(
-            "`!scan <target>` - Full security assessment\n"
-            "`!recon <target>` - Reconnaissance only"
+            "`!scan <target> [-v]` - Full security assessment\n"
+            "`!recon <target> [-v]` - Reconnaissance only"
         ),
         inline=False,
     )
@@ -48,8 +48,9 @@ def create_help_embed() -> discord.Embed:
     embed.add_field(
         name="⚠️ Analysis",
         value=(
-            "`!vuln <target>` - Vulnerability scan\n"
-            "`!intel <target>` - Threat intelligence lookup"
+            "`!vuln <target> [-v]` - Vulnerability scan\n"
+            "`!intel <target>` - Threat intelligence lookup\n\n"
+            "*Use `-v` for verbose output with commands and timing*"
         ),
         inline=False,
     )
@@ -59,7 +60,9 @@ def create_help_embed() -> discord.Embed:
         value=(
             "`!status` - Current job status\n"
             "`!abort` - Stop current job\n"
-            "`!report` - Generate report"
+            "`!report` - Generate report\n"
+            "`!config [agent]` - Show agent configuration\n"
+            "`!debug [on/off]` - Toggle debug output"
         ),
         inline=False,
     )
@@ -347,6 +350,290 @@ def create_status_embed(
         )
     
     embed.set_footer(text="AM-Corp Security Team")
+    
+    return embed
+
+
+def create_config_overview_embed() -> discord.Embed:
+    """Create embed showing all agents configuration overview."""
+    embed = discord.Embed(
+        title="🤖 AM-Corp Agent Configuration",
+        description="Overview of all agents and their current settings.",
+        color=Colors.INFO,
+        timestamp=datetime.now(timezone.utc),
+    )
+    
+    embed.add_field(
+        name="🔍 Randy Recon",
+        value=(
+            "**Tools:** dig, whois, nmap\n"
+            "**Scan Type:** TCP connect (-sT)\n"
+            "**Ports:** Top 500\n"
+            "`!config randy` for details"
+        ),
+        inline=True,
+    )
+    
+    embed.add_field(
+        name="⚠️ Victor Vuln",
+        value=(
+            "**Tool:** Nuclei\n"
+            "**Templates:** 4 categories\n"
+            "**Severity:** critical, high, medium\n"
+            "`!config victor` for details"
+        ),
+        inline=True,
+    )
+    
+    embed.add_field(
+        name="🧠 Ivy Intel",
+        value=(
+            "**Status:** Not yet implemented\n"
+            "**Planned:** OSINT, threat intel\n"
+            "`!config ivy` for details"
+        ),
+        inline=True,
+    )
+    
+    embed.add_field(
+        name="📊 Rita Report",
+        value=(
+            "**Status:** Not yet implemented\n"
+            "**Planned:** Report generation\n"
+            "`!config rita` for details"
+        ),
+        inline=True,
+    )
+    
+    embed.set_footer(text="Use !config <agent> for detailed configuration")
+    
+    return embed
+
+
+def create_randy_config_embed() -> discord.Embed:
+    """Create detailed config embed for Randy Recon."""
+    embed = discord.Embed(
+        title="🔍 Randy Recon - Configuration",
+        description="Reconnaissance specialist settings and tools.",
+        color=Colors.RECON,
+        timestamp=datetime.now(timezone.utc),
+    )
+    
+    embed.add_field(
+        name="DNS Lookup (dig)",
+        value=(
+            "```\n"
+            "dig +short <target> A\n"
+            "dig +short <target> AAAA\n"
+            "dig +short <target> MX\n"
+            "dig +short <target> NS\n"
+            "dig +short <target> TXT\n"
+            "dig +short <target> CNAME\n"
+            "```"
+        ),
+        inline=False,
+    )
+    
+    embed.add_field(
+        name="WHOIS Lookup",
+        value=(
+            "```\n"
+            "whois <base_domain>\n"
+            "```\n"
+            "Extracts: registrar, creation date, expiry, name servers"
+        ),
+        inline=False,
+    )
+    
+    embed.add_field(
+        name="Port Scan (nmap)",
+        value=(
+            "```\n"
+            "nmap -sT -T4 --top-ports 500 -sV -n -Pn --open\n"
+            "```"
+        ),
+        inline=False,
+    )
+    
+    embed.add_field(
+        name="Nmap Flags",
+        value=(
+            "• `-sT` TCP connect scan (no root)\n"
+            "• `-T4` Aggressive timing\n"
+            "• `--top-ports 500` Most common ports\n"
+            "• `-sV` Service version detection\n"
+            "• `-n` Skip DNS resolution\n"
+            "• `-Pn` Skip host discovery\n"
+            "• `--open` Only show open ports"
+        ),
+        inline=False,
+    )
+    
+    embed.add_field(
+        name="Timeout",
+        value="5 minutes (300 seconds)",
+        inline=True,
+    )
+    
+    embed.add_field(
+        name="Restrictions",
+        value="❌ .gov/.mil domains blocked",
+        inline=True,
+    )
+    
+    embed.set_footer(text="Randy Recon")
+    
+    return embed
+
+
+def create_victor_config_embed() -> discord.Embed:
+    """Create detailed config embed for Victor Vuln."""
+    embed = discord.Embed(
+        title="⚠️ Victor Vuln - Configuration",
+        description="Vulnerability analyst settings and templates.",
+        color=Colors.VULN,
+        timestamp=datetime.now(timezone.utc),
+    )
+    
+    embed.add_field(
+        name="Scanner",
+        value="**Nuclei** v3.3.7 by ProjectDiscovery",
+        inline=False,
+    )
+    
+    embed.add_field(
+        name="Current Templates",
+        value=(
+            "• `cves` - Known CVE vulnerabilities\n"
+            "• `vulnerabilities` - Generic security issues\n"
+            "• `misconfigurations` - Security misconfigs\n"
+            "• `exposures` - Sensitive data exposure"
+        ),
+        inline=False,
+    )
+    
+    embed.add_field(
+        name="Severity Filter",
+        value="`critical`, `high`, `medium`\n(low/info excluded)",
+        inline=True,
+    )
+    
+    embed.add_field(
+        name="Rate Limit",
+        value="150 requests/second",
+        inline=True,
+    )
+    
+    embed.add_field(
+        name="Timeout",
+        value="10 minutes per scan",
+        inline=True,
+    )
+    
+    embed.add_field(
+        name="Command",
+        value=(
+            "```\n"
+            "nuclei -u <target> -severity critical,high,medium\n"
+            "       -tags cves,vulnerabilities,misconfigurations,exposures\n"
+            "       -jsonl -silent -rate-limit 150\n"
+            "```"
+        ),
+        inline=False,
+    )
+    
+    embed.add_field(
+        name="Smart Mode",
+        value="⏳ **Planned** - Templates will adapt based on Randy's findings",
+        inline=False,
+    )
+    
+    embed.set_footer(text="Victor Vuln")
+    
+    return embed
+
+
+def create_ivy_config_embed() -> discord.Embed:
+    """Create detailed config embed for Ivy Intel."""
+    embed = discord.Embed(
+        title="🧠 Ivy Intel - Configuration",
+        description="Threat intelligence analyst settings.",
+        color=Colors.INTEL,
+        timestamp=datetime.now(timezone.utc),
+    )
+    
+    embed.add_field(
+        name="Status",
+        value="⏳ **Not Yet Implemented**",
+        inline=False,
+    )
+    
+    embed.add_field(
+        name="Planned Tools",
+        value=(
+            "• `shodan_lookup` - Internet exposure data\n"
+            "• `virustotal_check` - Reputation and malware\n"
+            "• `breach_check` - Historical breaches\n"
+            "• `whois_history` - Domain ownership history"
+        ),
+        inline=False,
+    )
+    
+    embed.add_field(
+        name="Planned Capabilities",
+        value=(
+            "• OSINT gathering\n"
+            "• Threat actor correlation\n"
+            "• Breach history analysis\n"
+            "• Reputation scoring"
+        ),
+        inline=False,
+    )
+    
+    embed.set_footer(text="Ivy Intel")
+    
+    return embed
+
+
+def create_rita_config_embed() -> discord.Embed:
+    """Create detailed config embed for Rita Report."""
+    embed = discord.Embed(
+        title="📊 Rita Report - Configuration",
+        description="Security report analyst settings.",
+        color=Colors.REPORT,
+        timestamp=datetime.now(timezone.utc),
+    )
+    
+    embed.add_field(
+        name="Status",
+        value="⏳ **Not Yet Implemented**",
+        inline=False,
+    )
+    
+    embed.add_field(
+        name="Planned Tools",
+        value=(
+            "• `template_renderer` - Markdown/PDF generation\n"
+            "• `chart_generator` - Visualization creation\n"
+            "• `summary_writer` - Executive summary generation"
+        ),
+        inline=False,
+    )
+    
+    embed.add_field(
+        name="Planned Report Structure",
+        value=(
+            "1. Executive Summary\n"
+            "2. Scope and Methodology\n"
+            "3. Key Findings (prioritized)\n"
+            "4. Technical Details\n"
+            "5. Remediation Roadmap\n"
+            "6. Appendices"
+        ),
+        inline=False,
+    )
+    
+    embed.set_footer(text="Rita Report")
     
     return embed
 

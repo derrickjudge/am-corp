@@ -13,17 +13,27 @@ from src.utils.logging import audit_log, get_logger
 from .agent_bots import send_as_randy
 from .embeds import (
     create_blocked_embed,
+    create_config_overview_embed,
     create_error_embed,
     create_help_embed,
+    create_ivy_config_embed,
+    create_randy_config_embed,
+    create_rita_config_embed,
     create_scan_started_embed,
     create_scope_confirmation_embed,
     create_status_embed,
+    create_victor_config_embed,
 )
 from .scope_cache import get_scope_cache
 from .validators import validate_target
 from .webhooks import post_alert
 
 logger = get_logger(__name__)
+
+
+def _parse_verbose_flag(args: tuple[str, ...]) -> bool:
+    """Check if -v or --verbose flag is present in args."""
+    return "-v" in args or "--verbose" in args
 
 
 async def setup_commands(bot: commands.Bot) -> None:
@@ -40,19 +50,22 @@ async def setup_commands(bot: commands.Bot) -> None:
         await ctx.send(embed=create_status_embed(bot.active_job))
 
     @bot.command(name="scan")
-    async def scan_command(ctx: commands.Context, target: str) -> None:
-        """Start a full security assessment."""
-        await handle_scan(ctx, target, "full", bot)
+    async def scan_command(ctx: commands.Context, target: str, *args: str) -> None:
+        """Start a full security assessment. Use -v for verbose mode."""
+        verbose = _parse_verbose_flag(args)
+        await handle_scan(ctx, target, "full", bot, verbose=verbose)
 
     @bot.command(name="recon")
-    async def recon_command(ctx: commands.Context, target: str) -> None:
-        """Start reconnaissance only."""
-        await handle_scan(ctx, target, "recon", bot)
+    async def recon_command(ctx: commands.Context, target: str, *args: str) -> None:
+        """Start reconnaissance only. Use -v for verbose mode."""
+        verbose = _parse_verbose_flag(args)
+        await handle_scan(ctx, target, "recon", bot, verbose=verbose)
 
     @bot.command(name="vuln")
-    async def vuln_command(ctx: commands.Context, target: str) -> None:
-        """Start vulnerability scan only."""
-        await handle_scan(ctx, target, "vuln", bot)
+    async def vuln_command(ctx: commands.Context, target: str, *args: str) -> None:
+        """Start vulnerability scan only. Use -v for verbose mode."""
+        verbose = _parse_verbose_flag(args)
+        await handle_scan(ctx, target, "vuln", bot, verbose=verbose)
 
     @bot.command(name="intel")
     async def intel_command(ctx: commands.Context, target: str) -> None:
@@ -185,6 +198,134 @@ async def setup_commands(bot: commands.Bot) -> None:
         latency = round(bot.latency * 1000)
         await ctx.send(f"🏓 Pong! Latency: {latency}ms")
 
+    @bot.command(name="debug")
+    async def debug_command(ctx: commands.Context, action: str | None = None) -> None:
+        """Toggle debug channel output."""
+        from src.utils.debug import is_debug_enabled, set_debug_channel
+        from src.utils.config import settings
+        
+        if action is None:
+            # Show current status
+            status = "✅ **Enabled**" if is_debug_enabled() else "❌ **Disabled**"
+            channel_info = ""
+            if settings.discord_channel_debug:
+                channel_info = f"\nDebug channel: <#{settings.discord_channel_debug}>"
+            
+            embed = discord.Embed(
+                title="🐛 Debug Mode Status",
+                description=f"Status: {status}{channel_info}",
+                color=0x9B59B6,
+            )
+            embed.add_field(
+                name="Usage",
+                value=(
+                    "`!debug on` - Enable debug output\n"
+                    "`!debug off` - Disable debug output\n"
+                    "`!debug` - Show current status"
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="Note",
+                value="Debug channel must be configured in `.env` with `DEBUG_CHANNEL_ENABLED=true` and `DISCORD_CHANNEL_DEBUG=<channel_id>`",
+                inline=False,
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        action_lower = action.lower()
+        
+        if action_lower in ("on", "enable", "true", "1"):
+            if not settings.discord_channel_debug:
+                await ctx.send(
+                    embed=create_error_embed(
+                        "Debug Channel Not Configured",
+                        "Set `DISCORD_CHANNEL_DEBUG` in your `.env` file to enable debug output."
+                    )
+                )
+                return
+            
+            # Enable debug channel
+            settings.debug_channel_enabled = True
+            
+            # Try to set up the channel
+            guild = ctx.guild
+            if guild:
+                debug_channel = guild.get_channel(int(settings.discord_channel_debug))
+                if debug_channel:
+                    set_debug_channel(debug_channel)
+                    await ctx.send("✅ Debug mode **enabled**. Technical details will be posted to the debug channel.")
+                else:
+                    await ctx.send(
+                        embed=create_error_embed(
+                            "Debug Channel Not Found",
+                            f"Could not find channel with ID `{settings.discord_channel_debug}`"
+                        )
+                    )
+        
+        elif action_lower in ("off", "disable", "false", "0"):
+            settings.debug_channel_enabled = False
+            set_debug_channel(None)
+            await ctx.send("❌ Debug mode **disabled**.")
+        
+        else:
+            await ctx.send(
+                embed=create_error_embed(
+                    "Unknown Action",
+                    f"Unknown action: `{action}`\n\nUse `on` or `off`."
+                )
+            )
+
+    @bot.command(name="config")
+    async def config_command(ctx: commands.Context, agent: str | None = None) -> None:
+        """Show agent configuration details."""
+        if agent is None:
+            # Show overview of all agents
+            await ctx.send(embed=create_config_overview_embed())
+            return
+        
+        # Normalize agent name
+        agent_lower = agent.lower().strip()
+        
+        # Map common names to canonical names
+        agent_map = {
+            "randy": "randy",
+            "randy_recon": "randy",
+            "recon": "randy",
+            "victor": "victor",
+            "victor_vuln": "victor",
+            "vuln": "victor",
+            "ivy": "ivy",
+            "ivy_intel": "ivy",
+            "intel": "ivy",
+            "rita": "rita",
+            "rita_report": "rita",
+            "report": "rita",
+        }
+        
+        canonical = agent_map.get(agent_lower)
+        
+        if canonical == "randy":
+            await ctx.send(embed=create_randy_config_embed())
+        elif canonical == "victor":
+            await ctx.send(embed=create_victor_config_embed())
+        elif canonical == "ivy":
+            await ctx.send(embed=create_ivy_config_embed())
+        elif canonical == "rita":
+            await ctx.send(embed=create_rita_config_embed())
+        else:
+            await ctx.send(
+                embed=create_error_embed(
+                    "Unknown Agent",
+                    f"Unknown agent: `{agent}`\n\n"
+                    "Available agents:\n"
+                    "• `randy` (or `recon`)\n"
+                    "• `victor` (or `vuln`)\n"
+                    "• `ivy` (or `intel`)\n"
+                    "• `rita` (or `report`)"
+                )
+            )
+
     logger.info("Commands registered")
 
 
@@ -193,11 +334,19 @@ async def handle_scan(
     target: str,
     scan_type: str,
     bot: commands.Bot,
+    verbose: bool = False,
 ) -> None:
     """
     Handle scan commands with validation and confirmation flow.
     
     Scope approvals are cached for 12 hours to avoid repeated confirmations.
+    
+    Args:
+        ctx: Discord command context
+        target: Target to scan
+        scan_type: Type of scan (recon, vuln, full, intel)
+        bot: Bot instance
+        verbose: If True, agents output additional technical details
     """
     # Debug: Track invocations
     logger.info(
@@ -249,6 +398,7 @@ async def handle_scan(
             "target": target,
             "scan_type": scan_type,
             "user": str(ctx.author),
+            "verbose": verbose,
         }
 
         logger.info(
@@ -269,5 +419,5 @@ async def handle_scan(
 
     # Target is approved (either pre-approved, or cached), start scan
     await ctx.send(embed=create_scan_started_embed(target, scan_type))
-    await bot.start_scan(target, scan_type, ctx.channel)
+    await bot.start_scan(target, scan_type, ctx.channel, verbose=verbose)
 

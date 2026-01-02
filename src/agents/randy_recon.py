@@ -167,14 +167,25 @@ class RandyRecon:
             # Return fallback, NOT the prompt
             return fallback if fallback else "Working on it..."
     
-    async def run_recon(self, target: str) -> ReconResult:
+    async def run_recon(self, target: str, verbose: bool = False) -> ReconResult:
         """
         Run full reconnaissance on a target.
         
         This is the main entry point for recon operations.
         Posts updates to Discord as work progresses.
+        
+        Args:
+            target: Target to scan
+            verbose: If True, output additional technical details
         """
         logger.info(f"Starting reconnaissance on {target}", agent=self.agent_id)
+        
+        # Verbose mode header
+        if verbose:
+            await self._post_message(
+                f"**[VERBOSE MODE]** Starting recon on `{target}`\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            )
         
         audit_log(
             action="recon_started",
@@ -205,6 +216,14 @@ class RandyRecon:
         
         # Phase 1: DNS Lookup (passive)
         if "dig" in available:
+            if verbose:
+                await self._post_message(
+                    "**Phase 1: DNS Lookup**\n"
+                    "```\n"
+                    f"dig +short {target} A/AAAA/MX/NS/TXT/CNAME\n"
+                    "```"
+                )
+            
             await asyncio.sleep(1)  # Natural pacing
             result.dns_result = await dig_lookup(target)
             
@@ -230,6 +249,17 @@ class RandyRecon:
         
         # Phase 2: WHOIS Lookup (passive)
         if "whois" in available:
+            if verbose:
+                # Extract base domain for whois
+                from src.tools.recon_tools import _extract_base_domain
+                base_domain = _extract_base_domain(target)
+                await self._post_message(
+                    "**Phase 2: WHOIS Lookup**\n"
+                    "```\n"
+                    f"whois {base_domain}\n"
+                    "```"
+                )
+            
             await asyncio.sleep(1.5)
             result.whois_result = await whois_lookup(target)
             
@@ -265,12 +295,21 @@ class RandyRecon:
         if "nmap" in available:
             await asyncio.sleep(1)
             
-            scanning_msg = await self._generate_message(
-                f"You're about to start the port scan on {target}. "
-                f"Generate a short message (1 sentence) saying you're moving to active scanning.",
-                fallback=f"Movin' on to the port scan now..."
-            )
-            await self._post_message(scanning_msg)
+            if verbose:
+                await self._post_message(
+                    "**Phase 3: Port Scan (Active)**\n"
+                    "```\n"
+                    f"nmap -sT -T4 --top-ports 500 -sV -n -Pn --open {target}\n"
+                    "```\n"
+                    "Flags: TCP connect, aggressive timing, top 500 ports, service detection"
+                )
+            else:
+                scanning_msg = await self._generate_message(
+                    f"You're about to start the port scan on {target}. "
+                    f"Generate a short message (1 sentence) saying you're moving to active scanning.",
+                    fallback=f"Movin' on to the port scan now..."
+                )
+                await self._post_message(scanning_msg)
             
             result.nmap_result = await nmap_scan(target)
             
@@ -449,8 +488,8 @@ def get_randy() -> RandyRecon:
     return _randy
 
 
-async def run_recon(target: str) -> ReconResult:
+async def run_recon(target: str, verbose: bool = False) -> ReconResult:
     """Convenience function to run recon on a target."""
     randy = get_randy()
-    return await randy.run_recon(target)
+    return await randy.run_recon(target, verbose=verbose)
 

@@ -90,6 +90,16 @@ class AgentBot(discord.Client):
                     self.alerts_channel = guild.get_channel(
                         int(settings.discord_channel_alerts)
                     )
+                
+                # Set up debug channel if enabled (only do this once from first bot)
+                if settings.debug_channel_enabled and settings.discord_channel_debug:
+                    from src.utils.debug import set_debug_channel, _debug_channel
+                    if _debug_channel is None:
+                        debug_channel = guild.get_channel(
+                            int(settings.discord_channel_debug)
+                        )
+                        if debug_channel:
+                            set_debug_channel(debug_channel)
 
         self._ready.set()
 

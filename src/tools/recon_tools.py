@@ -35,15 +35,33 @@ def _check_tool_available(tool_name: str) -> bool:
     return shutil.which(tool_name) is not None
 
 
-async def run_command(cmd: list[str], timeout: int = 30) -> tuple[bool, str, str]:
+async def run_command(
+    cmd: list[str], 
+    timeout: int = 30,
+    agent: str | None = None,
+) -> tuple[bool, str, str]:
     """
     Run a shell command asynchronously with timeout.
+    
+    Args:
+        cmd: Command and arguments to execute
+        timeout: Timeout in seconds
+        agent: Agent ID for debug logging
     
     Returns:
         Tuple of (success, stdout, stderr)
     """
+    import time
+    from src.utils.debug import debug_command, debug_result, is_debug_enabled
+    
     cmd_str = " ".join(cmd)
     logger.info(f"[CMD] Executing: {cmd_str}")
+    
+    # Post to debug channel
+    if is_debug_enabled():
+        await debug_command(cmd_str, agent=agent)
+    
+    start_time = time.time()
     
     try:
         process = await asyncio.create_subprocess_exec(
@@ -59,6 +77,7 @@ async def run_command(cmd: list[str], timeout: int = 30) -> tuple[bool, str, str
             timeout=timeout,
         )
         
+        duration = time.time() - start_time
         success = process.returncode == 0
         stdout_decoded = stdout.decode("utf-8", errors="replace")
         stderr_decoded = stderr.decode("utf-8", errors="replace")
@@ -69,14 +88,36 @@ async def run_command(cmd: list[str], timeout: int = 30) -> tuple[bool, str, str
         if stderr_decoded:
             logger.debug(f"[CMD] stderr: {stderr_decoded[:200]}...")
         
+        # Post result to debug channel
+        if is_debug_enabled():
+            output_preview = stdout_decoded or stderr_decoded
+            await debug_result(
+                cmd[0],  # Just the command name
+                process.returncode,
+                duration,
+                agent=agent,
+                output_preview=output_preview[:100] if output_preview else None,
+            )
+        
         return success, stdout_decoded, stderr_decoded
         
     except asyncio.TimeoutError:
+        duration = time.time() - start_time
         logger.error(f"[CMD] Timed out after {timeout}s: {cmd_str}")
         process.kill()
+        
+        if is_debug_enabled():
+            await debug_result(cmd[0], -1, duration, agent=agent, output_preview="TIMEOUT")
+        
         return False, "", f"Command timed out after {timeout} seconds"
     except Exception as e:
+        duration = time.time() - start_time
         logger.error(f"[CMD] Failed: {cmd_str} - {e}")
+        
+        if is_debug_enabled():
+            from src.utils.debug import debug_error
+            await debug_error(f"Command failed: {cmd_str}", agent=agent, exception=e)
+        
         return False, "", str(e)
 
 

@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     )
     discord_channel_results: str = Field(default="", description="Results channel ID")
     discord_channel_alerts: str = Field(default="", description="Alerts channel ID")
+    discord_channel_debug: str = Field(default="", description="Debug channel ID")
+    
+    # Debug channel settings
+    debug_channel_enabled: bool = Field(
+        default=False, description="Enable debug output to dedicated channel"
+    )
 
     # Webhook URLs
     discord_webhook_agent_chat: str = Field(
