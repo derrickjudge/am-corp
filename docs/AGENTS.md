@@ -81,6 +81,53 @@ AM-Corp is staffed by specialized AI agents who work as a team through natural c
 | `dig` | DNS lookups and enumeration |
 | `whois` | Domain registration info |
 
+#### What Does Randy Actually Do?
+
+When you run `!recon <target>` or `!scan <target>`, Randy executes the following:
+
+**Phase 1: DNS Lookup (Passive)**
+```bash
+dig +short <target> A
+dig +short <target> AAAA
+dig +short <target> MX
+dig +short <target> NS
+dig +short <target> TXT
+dig +short <target> CNAME
+```
+- Discovers IP addresses, mail servers, name servers
+- Identifies subdomains via CNAME records
+- No direct contact with target (passive)
+
+**Phase 2: WHOIS Lookup (Passive)**
+```bash
+whois <base_domain>
+```
+- Extracts registrar, creation date, expiry date
+- Finds name servers and registrant organization
+- Note: Subdomains are stripped (scanme.nmap.org → nmap.org)
+
+**Phase 3: Port Scan (Active)**
+```bash
+nmap -sT -T4 --top-ports 500 -sV -n -Pn --open <target>
+```
+
+| Flag | Purpose |
+|------|---------|
+| `-sT` | TCP connect scan (no root required) |
+| `-T4` | Aggressive timing |
+| `--top-ports 500` | Scan 500 most common ports |
+| `-sV` | Service version detection |
+| `-n` | Skip DNS resolution |
+| `-Pn` | Skip host discovery (assume up) |
+| `--open` | Only show open ports |
+
+**Timeout:** 5 minutes (300 seconds)
+
+**Output:** Randy posts updates as he works, then a final summary with:
+- DNS records found
+- WHOIS registration info
+- Open ports with services
+
 #### Conversation Examples
 
 ```
@@ -156,8 +203,51 @@ OUTPUT:
 | Tool | Purpose |
 |------|---------|
 | `nuclei` | Template-based vulnerability scanning |
-| `cve_lookup` | CVE database query |
-| `version_check` | Version-to-vulnerability mapping |
+| `cve_lookup` | CVE database query (planned) |
+| `version_check` | Version-to-vulnerability mapping (planned) |
+
+#### What Does Victor Actually Do?
+
+When you run `!vuln <target>` or `!scan <target>`, Victor executes the following:
+
+**Nuclei Vulnerability Scan**
+```bash
+nuclei -u https://<target> -severity critical,high,medium -tags cves,vulnerabilities,misconfigurations,exposures -jsonl -silent -nc -rate-limit 150 -timeout 10 -retries 1
+```
+
+| Flag | Purpose |
+|------|---------|
+| `-u` | Target URL |
+| `-severity` | Filter by severity level |
+| `-tags` | Template categories to use |
+| `-jsonl` | JSON Lines output for parsing |
+| `-silent` | Reduce noise |
+| `-rate-limit 150` | Max 150 requests/second |
+| `-timeout 10` | 10 second per-request timeout |
+
+**Current Default Templates:**
+
+| Template Tag | What It Checks |
+|--------------|----------------|
+| `cves` | Known CVE vulnerabilities |
+| `vulnerabilities` | Generic security issues |
+| `misconfigurations` | Security misconfigs (headers, CORS, etc.) |
+| `exposures` | Sensitive data exposure (.git, .env, backups) |
+
+**Severity Filter:** `critical`, `high`, `medium` (low/info excluded by default)
+
+**Scan Timeout:** 10 minutes
+
+**Template Count:** ~8,000+ templates from ProjectDiscovery
+
+**Current Limitation:** Templates are static regardless of Randy's findings. 
+See [ADR-003](adr/003-agent-transparency-and-smart-scanning.md) for planned smart template selection.
+
+**Output:** Victor posts findings by severity with:
+- Vulnerability name and CVE ID (if applicable)
+- CVSS score (if available)
+- Where it was found (URL/path)
+- Remediation guidance
 
 #### Conversation Examples
 

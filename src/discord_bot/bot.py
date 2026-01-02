@@ -215,25 +215,52 @@ class AMCorpBot(commands.Bot):
         }
 
         try:
+            recon_result = None
+            
             if scan_type in ("recon", "full"):
                 # Run Randy's reconnaissance
                 self.active_job["phase"] = "recon"
                 
                 from src.agents.randy_recon import run_recon
-                result = await run_recon(target)
+                recon_result = await run_recon(target)
                 
                 # Store findings
-                self.active_job["findings"]["recon"] = result.raw_findings
+                self.active_job["findings"]["recon"] = recon_result.raw_findings
                 
                 if scan_type == "full":
-                    # TODO: Chain to Victor, Ivy, Rita
-                    await send_as_randy(
-                        "Recon's done! Once Victor's up and runnin', he'll take it from here. "
-                        "For now, that's all I got for ya, partner."
-                    )
+                    # Chain to Victor for vulnerability scanning
+                    self.active_job["phase"] = "vuln"
+                    
+                    from src.agents.victor_vuln import get_victor
+                    victor = get_victor()
+                    
+                    # Pass open ports from recon to Victor
+                    ports = recon_result.raw_findings.get("ports", [])
+                    vuln_result = await victor.run_vuln_scan(target, ports=ports)
+                    
+                    self.active_job["findings"]["vuln"] = {
+                        "critical": vuln_result.critical_count,
+                        "high": vuln_result.high_count,
+                        "medium": vuln_result.medium_count,
+                        "low": vuln_result.low_count,
+                        "total": len(vuln_result.all_findings),
+                    }
             
             elif scan_type == "vuln":
-                await channel.send("⚠️ Victor Vuln is not yet implemented. Coming soon!")
+                # Run Victor's vulnerability scan directly
+                self.active_job["phase"] = "vuln"
+                
+                from src.agents.victor_vuln import get_victor
+                victor = get_victor()
+                vuln_result = await victor.run_vuln_scan(target)
+                
+                self.active_job["findings"]["vuln"] = {
+                    "critical": vuln_result.critical_count,
+                    "high": vuln_result.high_count,
+                    "medium": vuln_result.medium_count,
+                    "low": vuln_result.low_count,
+                    "total": len(vuln_result.all_findings),
+                }
             
             elif scan_type == "intel":
                 await channel.send("🧠 Ivy Intel is not yet implemented. Coming soon!")

@@ -282,6 +282,22 @@ class AgentBotManager:
     def get_bot(self, agent_id: str) -> AgentBot | None:
         """Get a specific agent bot."""
         return self.bots.get(agent_id)
+    
+    def get_user_id(self, agent_id: str) -> int | None:
+        """Get the Discord user ID for an agent bot."""
+        bot = self.get_bot(agent_id)
+        if bot and bot.user:
+            return bot.user.id
+        return None
+    
+    def get_mention(self, agent_id: str) -> str:
+        """Get a proper Discord mention string for an agent."""
+        user_id = self.get_user_id(agent_id)
+        if user_id:
+            return f"<@{user_id}>"
+        # Fallback to plain text if bot not available
+        agent = AGENTS.get(agent_id, {})
+        return f"@{agent.get('name', agent_id)}"
 
     async def send_as_agent(
         self,
@@ -317,6 +333,21 @@ def get_agent_manager() -> AgentBotManager:
 
 
 # Convenience functions
+def get_victor_mention() -> str:
+    """Get proper Discord mention for Victor Vuln."""
+    return get_agent_manager().get_mention(AGENT_VICTOR_VULN)
+
+
+def get_rita_mention() -> str:
+    """Get proper Discord mention for Rita Report."""
+    return get_agent_manager().get_mention(AGENT_RITA_REPORT)
+
+
+def get_ivy_mention() -> str:
+    """Get proper Discord mention for Ivy Intel."""
+    return get_agent_manager().get_mention(AGENT_IVY_INTEL)
+
+
 async def send_as_randy(message: str, channel: str = "agent_chat") -> bool:
     """Send a message as Randy Recon."""
     return await get_agent_manager().send_as_agent(AGENT_RANDY_RECON, message, channel)

@@ -17,7 +17,7 @@ from google import genai
 from google.genai import types
 
 from src.agents import AGENT_RANDY_RECON, AGENTS
-from src.discord_bot.agent_bots import get_agent_manager
+from src.discord_bot.agent_bots import get_agent_manager, get_victor_mention
 from src.tools.recon_tools import (
     ToolResult,
     dig_lookup,
@@ -288,12 +288,13 @@ class RandyRecon:
                         port_details.append(f"  • Port `{port_num}`: {service}{version_str}")
                     port_detail_str = "\n".join(port_details)
                     
+                    victor_mention = get_victor_mention()
                     nmap_summary = await self._generate_message(
                         f"You completed port scan on {target}. Open ports found:\n"
                         f"{json.dumps(ports, indent=2)}\n\n"
                         f"Generate a conversational update (2-3 sentences) about the open ports. "
-                        f"Mention services you recognize and if anything looks interesting for @Victor to check.",
-                        fallback=f"Port scan complete. Found {len(ports)} open ports:\n{port_detail_str}\n\n@Victor might want to take a look at these."
+                        f"Mention services you recognize and if anything looks interesting for {victor_mention} to check.",
+                        fallback=f"Port scan complete. Found {len(ports)} open ports:\n{port_detail_str}\n\n{victor_mention} might want to take a look at these."
                     )
                 else:
                     nmap_summary = await self._generate_message(
@@ -352,7 +353,8 @@ class RandyRecon:
         )
         
         if ports:
-            fallback_intro += " @Victor might want to mosey over and take a look at those open ports."
+            victor_mention = get_victor_mention()
+            fallback_intro += f" {victor_mention} might want to mosey over and take a look at those open ports."
         
         detailed_fallback = f"{fallback_intro}\n{bullet_section}"
         
@@ -409,6 +411,7 @@ class RandyRecon:
         port_count = len(findings.get("ports", []))
         whois_available = bool(findings.get("whois"))
         
+        victor_mention = get_victor_mention()
         prompt = f"""You've completed reconnaissance on {target}. Here's what you found:
 
 - DNS Records: {dns_count} total
@@ -423,7 +426,7 @@ Generate a final summary with TWO parts:
 PART 1: A brief conversational summary (2-3 sentences) that:
 - Mentions what you found (DNS records, WHOIS status, ports)
 - Notes anything interesting or concerning
-- If there are open ports, tag @Victor to check them out
+- If there are open ports, tag {victor_mention} to check them out
 - Keep your Texas cowboy personality
 
 PART 2: End your message with this exact bulleted list (already formatted for you):

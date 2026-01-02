@@ -22,10 +22,11 @@ services:
       - ENVIRONMENT=production
       - LOG_LEVEL=INFO
     
-    # Persist data and logs
+    # Persist data, logs, and nuclei templates
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
+      - nuclei-templates:/app/nuclei-templates
     
     # Network access for Discord API, Gemini API, and scanning
     networks:
@@ -35,11 +36,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 512M
+          cpus: '2.0'
+          memory: 2G
         reservations:
-          cpus: '0.25'
-          memory: 128M
+          cpus: '0.5'
+          memory: 512M
 
 # =============================================================================
 # Networks
@@ -47,4 +48,11 @@ services:
 networks:
   am-corp-network:
     driver: bridge
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  nuclei-templates:
+    driver: local
 

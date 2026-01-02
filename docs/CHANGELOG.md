@@ -31,6 +31,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Documented future feature for @mention-based agent interaction
   - Intent parsing architecture
   - Phased implementation plan
+- **ADR-003: Agent Transparency and Smart Scanning** (2026-01-02)
+  - `!config` command design for agent configuration visibility
+  - Verbose mode (`-v`) for troubleshooting
+  - Debug channel (toggleable) for technical details
+  - Smart template selection based on Randy's findings
+- **Victor Vuln agent** (2026-01-02)
+  - `src/agents/victor_vuln.py` - Vulnerability analyst implementation
+  - `src/tools/vuln_tools.py` - Nuclei wrapper with severity parsing
+  - Nuclei v3.3.7 added to Docker container
+  - `!vuln` command and full pipeline integration
 
 ### Changed
 - **requirements.txt**: Switched from `google-generativeai` to `google-genai` (deprecated library)

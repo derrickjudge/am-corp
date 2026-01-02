@@ -1,6 +1,6 @@
 # =============================================================================
 # AM-Corp Bot Container
-# Python 3.12 + Security Tools (dig, whois, nmap)
+# Python 3.12 + Security Tools (dig, whois, nmap, nuclei)
 # =============================================================================
 
 FROM python:3.12-slim
@@ -36,11 +36,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Useful utilities
     curl \
     iputils-ping \
+    unzip \
     # Cleanup
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     # Update CA certificates
     && update-ca-certificates
+
+# Install Nuclei vulnerability scanner
+ARG NUCLEI_VERSION=3.3.7
+ARG TARGETARCH
+RUN ARCH=$(case ${TARGETARCH} in \
+        amd64) echo "amd64" ;; \
+        arm64) echo "arm64" ;; \
+        *) echo "amd64" ;; \
+    esac) && \
+    curl -sSL "https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VERSION}/nuclei_${NUCLEI_VERSION}_linux_${ARCH}.zip" -o /tmp/nuclei.zip && \
+    unzip /tmp/nuclei.zip -d /usr/local/bin && \
+    chmod +x /usr/local/bin/nuclei && \
+    rm /tmp/nuclei.zip
+
+# Download Nuclei templates (as amcorp user later)
 
 # Set working directory
 WORKDIR /app
@@ -56,12 +72,15 @@ COPY src/ ./src/
 COPY scripts/ ./scripts/
 COPY config/ ./config/
 
-# Create directories for data and logs
-RUN mkdir -p /app/data /app/logs \
-    && chown -R amcorp:amcorp /app
+# Create directories for data, logs, and nuclei templates
+RUN mkdir -p /app/data /app/logs /app/nuclei-templates /home/amcorp/.config/nuclei \
+    && chown -R amcorp:amcorp /app /home/amcorp/.config
 
 # Switch to non-root user
 USER amcorp
+
+# Download Nuclei templates (run as amcorp user)
+RUN nuclei -ut -silent || true
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
