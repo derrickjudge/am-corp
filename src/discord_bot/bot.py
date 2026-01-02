@@ -254,6 +254,26 @@ class AMCorpBot(commands.Bot):
                         "low": vuln_result.low_count,
                         "total": len(vuln_result.all_findings),
                     }
+                    
+                    # Chain to Ivy for threat intelligence enrichment
+                    if vuln_result.all_findings:
+                        self.active_job["phase"] = "intel"
+                        
+                        from src.agents.ivy_intel import get_ivy
+                        ivy = get_ivy()
+                        
+                        # Pass Victor's findings to Ivy for enrichment
+                        intel_result = await ivy.run_intel(
+                            target=target,
+                            vuln_findings=vuln_result.all_findings,
+                            verbose=verbose,
+                        )
+                        
+                        self.active_job["findings"]["intel"] = {
+                            "cves_enriched": len(intel_result.cve_enrichments),
+                            "shodan_available": intel_result.shodan_result is not None,
+                            "virustotal_available": intel_result.virustotal_result is not None,
+                        }
             
             elif scan_type == "vuln":
                 # Run Victor's vulnerability scan directly
@@ -272,7 +292,12 @@ class AMCorpBot(commands.Bot):
                 }
             
             elif scan_type == "intel":
-                await channel.send("🧠 Ivy Intel is not yet implemented. Coming soon!")
+                # Run Ivy's intelligence gathering directly
+                self.active_job["phase"] = "intel"
+                
+                from src.agents.ivy_intel import get_ivy
+                ivy = get_ivy()
+                intel_result = await ivy.run_intel(target=target, verbose=verbose)
             
             # Job completed successfully - clear active job
             self.active_job = None

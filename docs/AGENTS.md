@@ -309,12 +309,59 @@ COMMUNICATION:
 
 #### Tools
 
-| Tool | Purpose |
-|------|---------|
-| `shodan_lookup` | Internet exposure data |
-| `virustotal_check` | Reputation and malware history |
-| `breach_check` | Historical breach database |
-| `whois_history` | Domain ownership history |
+| Tool | Purpose | Status |
+|------|---------|--------|
+| `cve_lookup` | NVD database queries for CVE details | ✅ Active |
+| `epss_lookup` | EPSS exploitation probability scores | ✅ Active |
+| `shodan_lookup` | Internet exposure data | ⚠️ Requires API key |
+| `virustotal_check` | Reputation and malware history | ⚠️ Requires API key |
+
+#### What Does Ivy Actually Do?
+
+When you run `!intel <target>` or Victor finds CVEs during `!scan`, Ivy enriches findings with:
+
+**Phase 1: CVE Enrichment (Always Available)**
+- Queries National Vulnerability Database (NVD) for CVE details
+- Gets EPSS scores (Exploit Prediction Scoring System) for exploitation probability
+- Assesses real-world exploitation risk
+
+**CVE Lookup via NVD API:**
+```
+GET https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2021-44228
+```
+Returns: CVSS score, severity, description, references, CWE IDs
+
+**EPSS Lookup via FIRST API:**
+```
+GET https://api.first.org/data/v1/epss?cve=CVE-2021-44228
+```
+Returns: Exploitation probability (0-1), percentile ranking
+
+**Phase 2: Shodan Lookup (Requires SHODAN_API_KEY)**
+```
+GET https://api.shodan.io/shodan/host/{ip}?key={api_key}
+```
+Returns: Open ports, services, organization, known vulns, exposure history
+
+**Phase 3: VirusTotal Lookup (Requires VIRUSTOTAL_API_KEY)**
+```
+GET https://www.virustotal.com/api/v3/domains/{domain}
+```
+Returns: Reputation score, malicious/suspicious flags, categories
+
+**Risk Assessment:**
+| EPSS Score | Risk Level | Interpretation |
+|------------|------------|----------------|
+| ≥50% | CRITICAL | Very high exploitation likelihood |
+| 20-50% | HIGH | Significant exploitation expected |
+| 5-20% | MEDIUM | Moderate exploitation probability |
+| <5% | LOW | Limited exploitation activity |
+
+**Rate Limits:**
+- NVD: 5 requests per 30 seconds (6 second delay between CVEs)
+- EPSS: No strict limit
+- Shodan: Depends on plan
+- VirusTotal: 4 requests/minute on free tier
 
 #### Conversation Examples
 
@@ -324,7 +371,7 @@ COMMUNICATION:
 
 🧠 Ivy Intel:     @Victor, regarding your nginx finding - I'm seeing that 
                   CVE-2019-20372 has been actively exploited by several 
-                  threat groups. Recommend bumping priority to HIGH.
+                  threat groups. EPSS score is 47% - recommend bumping to HIGH.
 
 🧠 Ivy Intel:     Interesting context: acme-corp.com had a credential breach
                   in 2022 affecting 50,000 records. The staging subdomain 

@@ -456,10 +456,18 @@ class VictorVuln:
         
         bullet_section = "\n".join(bullet_lines)
         
-        # Determine if we need to tag Rita
+        # Determine if we need to tag teammates
         needs_report = result.critical_count > 0 or result.high_count > 0
         rita_mention = get_rita_mention()
+        ivy_mention = get_ivy_mention()
+        
+        # Check if we have CVEs that Ivy should enrich
+        has_cves = any(
+            finding.get("cve_id") for finding in result.all_findings
+        )
+        
         rita_tag = f" {rita_mention}, we have findings that need to go in the report." if needs_report else ""
+        ivy_tag = f" {ivy_mention}, can you check the threat intel on these CVEs?" if has_cves else ""
         
         # Build fallback
         if total == 0:
@@ -474,11 +482,18 @@ class VictorVuln:
                 f"⚠️ Vulnerability scan complete on {target}.\n\n"
                 f"Found {total} total issue{'s' if total != 1 else ''}: "
                 f"{result.critical_count} critical, {result.high_count} high, "
-                f"{result.medium_count} medium.{rita_tag}"
+                f"{result.medium_count} medium.{ivy_tag}{rita_tag}"
                 f"{bullet_section}"
             )
         
         # Try to generate with AI
+        teammate_tags = []
+        if has_cves:
+            teammate_tags.append(f"Tag {ivy_mention} to check threat intel on the CVEs")
+        if needs_report:
+            teammate_tags.append(f"Tag {rita_mention} for the report")
+        teammate_instruction = ". ".join(teammate_tags) + "." if teammate_tags else ""
+        
         summary = await self._generate_message(
             f"You've completed a vulnerability scan on {target}. Results:\n"
             f"- Critical: {result.critical_count}\n"
@@ -486,7 +501,7 @@ class VictorVuln:
             f"- Medium: {result.medium_count}\n"
             f"- Low: {result.low_count}\n\n"
             f"Generate a professional summary (2-3 sentences). "
-            f"{'Tag ' + rita_mention + ' for the report since we have critical/high findings.' if needs_report else ''}\n\n"
+            f"{teammate_instruction}\n\n"
             f"End your message with this formatted list:\n{bullet_section}",
             fallback=fallback
         )

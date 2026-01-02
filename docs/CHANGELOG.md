@@ -58,6 +58,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Service-to-template mapping for 30+ services
   - Port-based fallback when service name is unknown
   - Shows template selection reasoning in verbose mode
+- **Ivy Intel agent** (2026-01-02)
+  - `src/agents/ivy_intel.py` - Full threat intelligence agent implementation
+  - `src/tools/intel_tools.py` - Tool wrappers for CVE lookup, EPSS, Shodan, VirusTotal
+  - CVE enrichment via NVD API (free, always available)
+  - EPSS exploitation probability scores (free, always available)
+  - Shodan host lookup (requires API key)
+  - VirusTotal reputation lookup (requires API key)
+  - Exploitation risk assessment (CRITICAL/HIGH/MEDIUM/LOW)
+  - Auto-chains after Victor in `!scan` flow
+  - `!intel` command for standalone threat intel lookup
   - Falls back to default broad templates when no recon data
 - **Victor Vuln agent** (2026-01-02)
   - `src/agents/victor_vuln.py` - Vulnerability analyst implementation

@@ -49,7 +49,7 @@ def create_help_embed() -> discord.Embed:
         name="⚠️ Analysis",
         value=(
             "`!vuln <target> [-v]` - Vulnerability scan\n"
-            "`!intel <target>` - Threat intelligence lookup\n\n"
+            "`!intel <target> [-v]` - Threat intelligence lookup\n\n"
             "*Use `-v` for verbose output with commands and timing*"
         ),
         inline=False,
@@ -559,6 +559,10 @@ def create_victor_config_embed() -> discord.Embed:
 
 def create_ivy_config_embed() -> discord.Embed:
     """Create detailed config embed for Ivy Intel."""
+    from src.tools.intel_tools import get_intel_capabilities
+    
+    capabilities = get_intel_capabilities()
+    
     embed = discord.Embed(
         title="🧠 Ivy Intel - Configuration",
         description="Threat intelligence analyst settings.",
@@ -568,28 +572,41 @@ def create_ivy_config_embed() -> discord.Embed:
     
     embed.add_field(
         name="Status",
-        value="⏳ **Not Yet Implemented**",
+        value="✅ **Active**",
+        inline=False,
+    )
+    
+    # Build tools status
+    tools_status = []
+    tools_status.append(f"• `cve_lookup` - NVD database queries {'✅' if capabilities['nvd_cve_lookup'] else '❌'}")
+    tools_status.append(f"• `epss_lookup` - Exploitation probability {'✅' if capabilities['epss_scores'] else '❌'}")
+    tools_status.append(f"• `shodan_lookup` - Internet exposure {'✅' if capabilities['shodan'] else '⚠️ API key not set'}")
+    tools_status.append(f"• `virustotal_check` - Reputation data {'✅' if capabilities['virustotal'] else '⚠️ API key not set'}")
+    tools_status.append(f"• `securitytrails` - Domain intel {'✅' if capabilities['securitytrails'] else '⚠️ API key not set'}")
+    
+    embed.add_field(
+        name="Tools",
+        value="\n".join(tools_status),
         inline=False,
     )
     
     embed.add_field(
-        name="Planned Tools",
+        name="Capabilities",
         value=(
-            "• `shodan_lookup` - Internet exposure data\n"
-            "• `virustotal_check` - Reputation and malware\n"
-            "• `breach_check` - Historical breaches\n"
-            "• `whois_history` - Domain ownership history"
+            "• CVE enrichment with CVSS and EPSS scores\n"
+            "• Exploitation risk assessment\n"
+            "• Priority adjustment recommendations\n"
+            "• Threat context correlation"
         ),
         inline=False,
     )
     
     embed.add_field(
-        name="Planned Capabilities",
+        name="API Keys",
         value=(
-            "• OSINT gathering\n"
-            "• Threat actor correlation\n"
-            "• Breach history analysis\n"
-            "• Reputation scoring"
+            f"• SHODAN_API_KEY: {'Configured' if capabilities['shodan'] else 'Not set'}\n"
+            f"• VIRUSTOTAL_API_KEY: {'Configured' if capabilities['virustotal'] else 'Not set'}\n"
+            f"• SECURITYTRAILS_API_KEY: {'Configured' if capabilities['securitytrails'] else 'Not set'}"
         ),
         inline=False,
     )

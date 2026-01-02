@@ -68,9 +68,10 @@ async def setup_commands(bot: commands.Bot) -> None:
         await handle_scan(ctx, target, "vuln", bot, verbose=verbose)
 
     @bot.command(name="intel")
-    async def intel_command(ctx: commands.Context, target: str) -> None:
-        """Start threat intelligence lookup only."""
-        await handle_scan(ctx, target, "intel", bot)
+    async def intel_command(ctx: commands.Context, target: str, *args: str) -> None:
+        """Start threat intelligence lookup only. Use -v for verbose mode."""
+        verbose = _parse_verbose_flag(args)
+        await handle_scan(ctx, target, "intel", bot, verbose=verbose)
 
     @bot.command(name="abort")
     async def abort_command(ctx: commands.Context) -> None:
