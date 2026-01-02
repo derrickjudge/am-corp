@@ -396,6 +396,147 @@ def _extract_cvss_score(finding: dict) -> float | None:
 
 
 # =============================================================================
+# Smart Template Selection
+# =============================================================================
+
+# Comprehensive service-to-template mapping based on ADR-003
+SERVICE_TEMPLATE_MAP: dict[str, list[str]] = {
+    # Web services
+    "http": ["http", "cves", "exposures", "misconfigurations"],
+    "https": ["http", "ssl", "cves", "exposures", "misconfigurations"],
+    "http-proxy": ["http", "cves", "exposures"],
+    "ssl/http": ["http", "ssl", "cves", "exposures"],
+    "ssl/https": ["http", "ssl", "cves", "exposures"],
+    
+    # SSH
+    "ssh": ["ssh", "network", "cves"],
+    "openssh": ["ssh", "network", "cves"],
+    
+    # FTP
+    "ftp": ["ftp", "network", "cves"],
+    "ftp-data": ["ftp", "network", "cves"],
+    
+    # Databases
+    "mysql": ["mysql", "network", "cves"],
+    "mariadb": ["mysql", "network", "cves"],
+    "postgresql": ["postgres", "network", "cves"],
+    "postgres": ["postgres", "network", "cves"],
+    "mongodb": ["mongodb", "network", "cves"],
+    "redis": ["redis", "network", "cves"],
+    "memcached": ["network", "cves"],
+    "elasticsearch": ["elasticsearch", "network", "cves", "exposures"],
+    "cassandra": ["network", "cves"],
+    
+    # Windows services
+    "smb": ["smb", "network", "cves"],
+    "microsoft-ds": ["smb", "network", "cves"],
+    "netbios-ssn": ["smb", "network", "cves"],
+    "rdp": ["rdp", "network", "cves"],
+    "ms-wbt-server": ["rdp", "network", "cves"],
+    
+    # Mail
+    "smtp": ["network", "cves"],
+    "imap": ["network", "cves"],
+    "pop3": ["network", "cves"],
+    
+    # DNS
+    "domain": ["dns", "network", "cves"],
+    "dns": ["dns", "network", "cves"],
+    
+    # Other common services
+    "telnet": ["network", "cves"],
+    "vnc": ["network", "cves"],
+    "ldap": ["network", "cves"],
+    "nfs": ["network", "cves"],
+    "docker": ["network", "cves", "exposures"],
+    "kubernetes": ["network", "cves", "exposures"],
+}
+
+# Port-based fallback mapping (when service name is unknown)
+PORT_TEMPLATE_MAP: dict[int, list[str]] = {
+    21: ["ftp", "network", "cves"],
+    22: ["ssh", "network", "cves"],
+    23: ["network", "cves"],  # telnet
+    25: ["network", "cves"],  # smtp
+    53: ["dns", "network", "cves"],
+    80: ["http", "cves", "exposures", "misconfigurations"],
+    110: ["network", "cves"],  # pop3
+    143: ["network", "cves"],  # imap
+    443: ["http", "ssl", "cves", "exposures", "misconfigurations"],
+    445: ["smb", "network", "cves"],
+    993: ["network", "cves"],  # imaps
+    995: ["network", "cves"],  # pop3s
+    1433: ["network", "cves"],  # mssql
+    1521: ["network", "cves"],  # oracle
+    3306: ["mysql", "network", "cves"],
+    3389: ["rdp", "network", "cves"],
+    5432: ["postgres", "network", "cves"],
+    5900: ["network", "cves"],  # vnc
+    6379: ["redis", "network", "cves"],
+    8080: ["http", "cves", "exposures"],
+    8443: ["http", "ssl", "cves", "exposures"],
+    9200: ["elasticsearch", "network", "cves", "exposures"],
+    27017: ["mongodb", "network", "cves"],
+}
+
+
+def select_templates_for_ports(
+    ports: list[dict],
+    include_baseline: bool = True,
+) -> tuple[list[str], dict[str, list[str]]]:
+    """
+    Select Nuclei templates based on discovered ports/services.
+    
+    Args:
+        ports: List of port dicts from Randy's recon 
+               (each with 'port', 'service', optionally 'version')
+        include_baseline: Always include baseline 'cves' templates
+    
+    Returns:
+        Tuple of (selected_templates, selection_reasoning)
+        - selected_templates: Deduplicated list of template tags
+        - selection_reasoning: Dict mapping service/port to selected templates
+    """
+    selected: set[str] = set()
+    reasoning: dict[str, list[str]] = {}
+    
+    if include_baseline:
+        selected.add("cves")
+        reasoning["baseline"] = ["cves"]
+    
+    for port_info in ports:
+        port = port_info.get("port")
+        service = port_info.get("service", "").lower()
+        
+        # Try service name first
+        if service and service in SERVICE_TEMPLATE_MAP:
+            templates = SERVICE_TEMPLATE_MAP[service]
+            selected.update(templates)
+            reasoning[f"{port}/{service}"] = templates
+        # Fall back to port number
+        elif port and port in PORT_TEMPLATE_MAP:
+            templates = PORT_TEMPLATE_MAP[port]
+            selected.update(templates)
+            reasoning[f"{port}/unknown"] = templates
+        # Generic fallback
+        elif port:
+            # Check if it's likely a web port
+            if port in [80, 443, 8080, 8443, 8000, 8888, 3000, 5000]:
+                templates = ["http", "cves", "exposures"]
+            else:
+                templates = ["network", "cves"]
+            selected.update(templates)
+            reasoning[f"{port}/generic"] = templates
+    
+    return sorted(list(selected)), reasoning
+
+
+def get_default_templates() -> list[str]:
+    """Get default templates when no recon data is available."""
+    return ["cves", "vulnerabilities", "misconfigurations", "exposures"]
+
+
+# =============================================================================
 # Service-specific scanning
 # =============================================================================
 

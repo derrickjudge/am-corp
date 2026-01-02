@@ -1,7 +1,7 @@
 # ADR-003: Agent Transparency and Smart Template Selection
 
 ## Status
-**Partially Implemented** - Phases B (`!config`), C (verbose mode), and D (debug channel) complete
+**Implemented** - All phases complete (B: `!config`, C: verbose mode, D: debug channel, E: smart templates)
 
 ## Date
 2026-01-02

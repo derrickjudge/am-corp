@@ -23,6 +23,8 @@ from src.tools.vuln_tools import (
     nuclei_scan,
     scan_service_by_port,
     get_available_vuln_tools,
+    select_templates_for_ports,
+    get_default_templates,
 )
 from src.utils.config import settings
 from src.utils.logging import audit_log, get_logger
@@ -212,9 +214,19 @@ class VictorVuln:
         # Run Nuclei scan
         await asyncio.sleep(1)
         
-        # Default templates
-        templates = ["cves", "vulnerabilities", "misconfigurations", "exposures"]
+        # Smart template selection based on Randy's findings
         severity = ["critical", "high", "medium"]
+        selection_reasoning: dict[str, list[str]] = {}
+        
+        if ports:
+            # Use smart template selection based on discovered ports
+            templates, selection_reasoning = select_templates_for_ports(ports)
+            template_mode = "SMART"
+        else:
+            # No recon data - use default broad templates
+            templates = get_default_templates()
+            selection_reasoning = {"default": templates}
+            template_mode = "DEFAULT"
         
         if verbose:
             # Show template selection reasoning
@@ -223,9 +235,16 @@ class VictorVuln:
                 port_list = [f"{p.get('port')}/{p.get('service', '?')}" for p in ports[:5]]
                 port_info = f"\n**Ports from recon:** {', '.join(port_list)}"
             
+            # Build reasoning display
+            reasoning_lines = []
+            for source, tags in selection_reasoning.items():
+                reasoning_lines.append(f"  • {source} → {', '.join(tags)}")
+            reasoning_str = "\n".join(reasoning_lines) if reasoning_lines else "  (none)"
+            
             await self._post_message(
-                f"**Nuclei Scan Configuration**{port_info}\n"
-                f"**Templates:** {', '.join(templates)}\n"
+                f"**Nuclei Scan Configuration** [{template_mode} MODE]{port_info}\n"
+                f"**Template Selection:**\n{reasoning_str}\n"
+                f"**Final Templates:** {', '.join(templates)}\n"
                 f"**Severity filter:** {', '.join(severity)}\n"
                 f"**Rate limit:** 150 req/s\n"
                 "```\n"
@@ -234,14 +253,23 @@ class VictorVuln:
                 "```"
             )
         else:
-            scanning_msg = await self._generate_message(
-                f"You're running Nuclei vulnerability scanner on {target}. "
-                f"Generate a brief status message saying you're scanning.",
-                fallback=f"Running Nuclei scanner against {target}. This may take a few minutes..."
-            )
+            if ports:
+                # Mention smart mode briefly
+                scanning_msg = await self._generate_message(
+                    f"You're running Nuclei with smart template selection on {target}. "
+                    f"Based on Randy's findings ({len(ports)} ports), you selected relevant templates. "
+                    f"Generate a brief status message.",
+                    fallback=f"Running targeted Nuclei scan based on Randy's findings. Selected {len(templates)} template categories for {len(ports)} open ports."
+                )
+            else:
+                scanning_msg = await self._generate_message(
+                    f"You're running Nuclei vulnerability scanner on {target} without recon data. "
+                    f"Generate a brief message noting you're using default broad templates.",
+                    fallback=f"Running Nuclei with default templates (no recon data available). This covers common vulnerabilities."
+                )
             await self._post_message(scanning_msg)
         
-        result.nuclei_result = await nuclei_scan(target)
+        result.nuclei_result = await nuclei_scan(target, templates=templates, severity=severity)
         
         if result.nuclei_result and result.nuclei_result.success:
             vulns = result.nuclei_result.vulnerabilities

@@ -53,6 +53,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Posts technical details to dedicated debug channel
   - Includes: commands, exit codes, timing, errors
   - Configure with `DEBUG_CHANNEL_ENABLED` and `DISCORD_CHANNEL_DEBUG`
+- **Smart template selection** (2026-01-02)
+  - Victor automatically selects Nuclei templates based on Randy's findings
+  - Service-to-template mapping for 30+ services
+  - Port-based fallback when service name is unknown
+  - Shows template selection reasoning in verbose mode
+  - Falls back to default broad templates when no recon data
 - **Victor Vuln agent** (2026-01-02)
   - `src/agents/victor_vuln.py` - Vulnerability analyst implementation
   - `src/tools/vuln_tools.py` - Nuclei wrapper with severity parsing

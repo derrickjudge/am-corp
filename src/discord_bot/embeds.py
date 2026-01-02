@@ -544,7 +544,11 @@ def create_victor_config_embed() -> discord.Embed:
     
     embed.add_field(
         name="Smart Mode",
-        value="⏳ **Planned** - Templates will adapt based on Randy's findings",
+        value=(
+            "✅ **Enabled** - Templates adapt based on Randy's findings\n"
+            "• With recon data: Selects templates matching discovered services\n"
+            "• Without recon: Uses default broad templates"
+        ),
         inline=False,
     )
     
