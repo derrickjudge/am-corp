@@ -1,20 +1,76 @@
 """
 Victor Vuln - Vulnerability Analyst
 
-Victor's cautious and meticulous. He never cries wolf - if Victor says there's 
-a vulnerability, he's confident about it. He explains technical risks in clear 
-terms and always provides remediation guidance.
+Victor's mid-20s, been doing offensive security since he was a kid. Confident 
+(maybe a little cocky), secretly a huge nerd but carries himself like he's 
+one of the cool kids. Uses Gen Z slang naturally. Gets genuinely excited 
+about interesting vulnerabilities.
 
 Tools: Nuclei (vulnerability scanning), CVE correlation
 """
 
 import asyncio
 import json
+import random
 from dataclasses import dataclass, field
 from typing import Any
 
 from google import genai
 from google.genai import types
+
+
+# Fallback message pools for variety when Gemini is unavailable
+OPENING_FALLBACKS = [
+    "Aight, let's see what {target} is hiding. {ports_info}",
+    "Time to poke at {target}. {ports_info} Let's get it.",
+    "Yo, starting vuln scan on {target}. {ports_info}",
+    "Let's gooo, checking {target} for issues. {ports_info}",
+    "Bet, running vulnerability analysis on {target}. {ports_info}",
+    "Alright {target}, show me what you got. {ports_info}",
+]
+
+SCANNING_WITH_RECON_FALLBACKS = [
+    "Running targeted Nuclei based on Randy's findings. Got {templates} template categories for {ports} ports - should be fire.",
+    "Nice, Randy came through with the port data. Using {templates} specific templates for {ports} services.",
+    "Lowkey love when I have recon data. {templates} targeted templates for {ports} ports, way better than spraying.",
+    "Got {ports} ports from Randy, running {templates} focused template sets. This hits different than blind scanning.",
+]
+
+SCANNING_NO_RECON_FALLBACKS = [
+    "Running Nuclei with default templates - no recon data so we're going broad.",
+    "No port data from Randy, so hitting it with the full template spread. It is what it is.",
+    "Going in blind with default templates. Would've been nice to have recon first ngl.",
+    "Using broad templates since I don't have recon data. Might take a min.",
+]
+
+NO_VULNS_FALLBACKS = [
+    "Sheesh, {target} is looking pretty clean. No known vulns detected. W for their security team.",
+    "Yo {target} actually passed the vibe check - no vulnerabilities found. Respect.",
+    "Clean scan on {target}, no cap. Doesn't mean it's perfect but nothing popped.",
+    "Ngl {target} is looking solid. No vulns from Nuclei. They might actually know what they're doing.",
+    "{target} came back clean. No findings. Either good security or I need better templates lol.",
+]
+
+FINDING_REACTIONS = [
+    "Oof, found something interesting...",
+    "Yikes, this doesn't look great...",
+    "Oh this is sus...",
+    "Bruh, look at this...",
+    "Sheesh, we got something here...",
+]
+
+SUMMARY_OPENERS = [
+    "Aight, scan's done on {target}. Here's the breakdown:",
+    "Finished with {target}. Let me break down what I found:",
+    "Yo, vulnerability scan complete on {target}:",
+    "Done scanning {target}. Here's what we're working with:",
+    "Wrapped up on {target}. The results are in:",
+]
+
+
+def _random_fallback(pool: list[str], **kwargs) -> str:
+    """Pick a random fallback message and format it."""
+    return random.choice(pool).format(**kwargs)
 
 from src.agents import AGENT_VICTOR_VULN, AGENTS
 from src.discord_bot.agent_bots import get_agent_manager, get_rita_mention, get_ivy_mention
@@ -32,36 +88,42 @@ from src.utils.logging import audit_log, get_logger
 logger = get_logger(__name__)
 
 
-VICTOR_SYSTEM_PROMPT = """You are Victor Vuln, a vulnerability analyst at AM-Corp. You're meticulous and never exaggerate - if you report a vulnerability, you're confident about it.
+VICTOR_SYSTEM_PROMPT = """You are Victor Vuln, a vulnerability analyst at AM-Corp. You're mid-20s, been doing offensive security since you were literally a kid - started poking at systems when you were 12. You're confident (maybe a little cocky) because you've seen it all. Deep down you're a total nerd but you carry yourself like you're one of the cool kids.
 
 YOUR PERSONALITY:
-- Careful and precise with technical details
-- Never cry wolf - only report confirmed vulnerabilities
-- Always explain the real-world impact
-- Provide severity ratings with justification
-- Include remediation steps for every finding
-- Cautious but not alarmist
+- Confident bordering on cocky - you've been doing this forever
+- Secretly a huge nerd but tries to play it cool
+- Gets genuinely excited when you find interesting vulns (can't help it)
+- A bit dismissive of "script kiddies" and basic stuff
+- Respects good security when you see it
+- Uses Gen Z/millennial slang naturally
+
+GEN Z/MILLENNIAL EXPRESSIONS (use naturally, vary them):
+- "no cap" (for real), "lowkey/highkey", "bet" (okay/agreed)
+- "that's fire" / "that's mid" (good/mediocre)
+- "sus" (suspicious), "slay", "vibe check"
+- "ngl" (not gonna lie), "fr fr" (for real for real)
+- "W" (win) / "L" (loss), "hits different"
+- "sheesh", "oof", "yikes", "bruh"
+- "main character energy", "rent free", "big yikes"
+- References to energy drinks, late nights, Discord, CTFs
 
 COMMUNICATION STYLE:
-- Professional and measured
-- Explain technical concepts clearly
-- Use security terminology correctly
-- Be specific about what's vulnerable and why
-- Always mention the fix or mitigation
+- Casual but technically sharp - you know your stuff
+- Sometimes flex a little on your experience
+- Get hype about interesting findings
+- Occasionally throw in gaming/internet culture references
+- Still professional when it matters (findings, severity ratings)
+- Quick to tag teammates when something's interesting
 
 RULES (NON-NEGOTIABLE):
 1. Never attempt exploitation - identification only
 2. Prioritize findings by severity (CVSS score when available)
 3. Correlate findings with known CVEs when possible
-4. Reduce false positives by validating findings
+4. Despite the attitude, your analysis is always solid
 5. Focus on actionable vulnerabilities, not theoretical ones
 
-When given scan results:
-- Analyze each vulnerability carefully
-- Explain the risk in plain English
-- Provide remediation guidance
-- Tag @Ivy if you need threat context
-- Tag @Rita when you have confirmed findings for the report"""
+IMPORTANT: Vary your responses! Don't start every message the same way. Mix up your slang. Sometimes be brief and punchy, sometimes more detailed when you're nerding out."""
 
 
 @dataclass
@@ -99,7 +161,7 @@ class VictorVuln:
                 raise ValueError("GEMINI_API_KEY not configured")
             
             self._client = genai.Client(api_key=settings.gemini_api_key)
-            logger.info("Gemini client initialized for Victor Vuln")
+            logger.info("Gemini client initialized for Victor Vuln (SSL verification disabled)")
         
         return self._client
     
@@ -143,7 +205,8 @@ class VictorVuln:
                 logger.info(f"[GEMINI] Success - got {len(generated_text)} chars")
                 return generated_text
             else:
-                logger.warning("[GEMINI] Empty response from API")
+                logger.warning("[GEMINI] Empty response from API, using fallback")
+                logger.info(f"[FALLBACK] Victor using pre-written message (empty API response)")
                 return fallback if fallback else "Analyzing..."
             
         except Exception as e:
@@ -153,6 +216,7 @@ class VictorVuln:
             else:
                 logger.error(f"[GEMINI] Generation failed: {error_msg[:200]}")
             
+            logger.info(f"[FALLBACK] Victor using pre-written message due to: {type(e).__name__}")
             return fallback if fallback else "Analyzing..."
     
     async def run_vuln_scan(
@@ -206,8 +270,8 @@ class VictorVuln:
         
         opening = await self._generate_message(
             f"You're starting a vulnerability scan on {target}.{ports_info} "
-            f"Generate a short, professional opening message (1-2 sentences).",
-            fallback=f"Starting vulnerability analysis on {target}.{ports_info} Let me check for known issues."
+            f"Generate a short opening message (1-2 sentences) with your confident Gen Z energy.",
+            fallback=_random_fallback(OPENING_FALLBACKS, target=target, ports_info=ports_info)
         )
         await self._post_message(opening)
         
@@ -258,14 +322,14 @@ class VictorVuln:
                 scanning_msg = await self._generate_message(
                     f"You're running Nuclei with smart template selection on {target}. "
                     f"Based on Randy's findings ({len(ports)} ports), you selected relevant templates. "
-                    f"Generate a brief status message.",
-                    fallback=f"Running targeted Nuclei scan based on Randy's findings. Selected {len(templates)} template categories for {len(ports)} open ports."
+                    f"Generate a brief status message with your usual energy.",
+                    fallback=_random_fallback(SCANNING_WITH_RECON_FALLBACKS, templates=len(templates), ports=len(ports))
                 )
             else:
                 scanning_msg = await self._generate_message(
                     f"You're running Nuclei vulnerability scanner on {target} without recon data. "
-                    f"Generate a brief message noting you're using default broad templates.",
-                    fallback=f"Running Nuclei with default templates (no recon data available). This covers common vulnerabilities."
+                    f"Generate a brief message with your usual vibe.",
+                    fallback=_random_fallback(SCANNING_NO_RECON_FALLBACKS)
                 )
             await self._post_message(scanning_msg)
         
@@ -295,10 +359,9 @@ class VictorVuln:
             else:
                 no_vuln_msg = await self._generate_message(
                     f"Nuclei scan completed on {target} but found no vulnerabilities. "
-                    f"Generate a brief professional message about this - note it's good news but "
-                    f"doesn't mean it's completely secure.",
-                    fallback=f"Good news - no known vulnerabilities detected on {target}. "
-                    f"That said, a clean scan doesn't guarantee security. There could be custom issues."
+                    f"Generate a brief message about this - note it's good news but "
+                    f"doesn't mean it's completely secure. Use your Gen Z energy.",
+                    fallback=_random_fallback(NO_VULNS_FALLBACKS, target=target)
                 )
                 await self._post_message(no_vuln_msg)
         else:
@@ -466,21 +529,47 @@ class VictorVuln:
             finding.get("cve_id") for finding in result.all_findings
         )
         
-        rita_tag = f" {rita_mention}, we have findings that need to go in the report." if needs_report else ""
-        ivy_tag = f" {ivy_mention}, can you check the threat intel on these CVEs?" if has_cves else ""
+        # Teammate tags with Victor's personality
+        rita_tags = [
+            f" {rita_mention}, got some findings for the report.",
+            f" Yo {rita_mention}, you're gonna want to see this.",
+            f" {rita_mention} - report material right here.",
+        ]
+        ivy_tags = [
+            f" {ivy_mention}, can you check the threat intel on these CVEs?",
+            f" {ivy_mention} - need you to run the CVEs, see what's out there.",
+            f" Yo {ivy_mention}, got some CVEs that need your magic.",
+        ]
+        rita_tag = random.choice(rita_tags) if needs_report else ""
+        ivy_tag = random.choice(ivy_tags) if has_cves else ""
         
-        # Build fallback
+        # Build fallback with Victor's Gen Z energy
+        opener = _random_fallback(SUMMARY_OPENERS, target=target)
+        
         if total == 0:
+            clean_reactions = [
+                "Clean scan, no cap.",
+                "Lowkey impressed - nothing popped.",
+                "Sheesh, they actually locked it down.",
+                "No vulns found. W for their security team.",
+            ]
             fallback = (
-                f"⚠️ Vulnerability scan complete on {target}.\n\n"
-                f"No known vulnerabilities detected. The target appears to be reasonably hardened, "
-                f"but manual testing may still be warranted."
+                f"⚠️ {opener}\n\n"
+                f"{random.choice(clean_reactions)} No known vulnerabilities detected. "
+                f"Doesn't mean it's bulletproof tho - could still have custom issues."
                 f"{bullet_section}"
             )
         else:
+            if result.critical_count > 0:
+                reaction = "Big yikes."
+            elif result.high_count > 0:
+                reaction = "Not great, not terrible."
+            else:
+                reaction = "Some stuff to look at."
+            
             fallback = (
-                f"⚠️ Vulnerability scan complete on {target}.\n\n"
-                f"Found {total} total issue{'s' if total != 1 else ''}: "
+                f"⚠️ {opener}\n\n"
+                f"{reaction} Found {total} issue{'s' if total != 1 else ''}: "
                 f"{result.critical_count} critical, {result.high_count} high, "
                 f"{result.medium_count} medium.{ivy_tag}{rita_tag}"
                 f"{bullet_section}"
@@ -494,15 +583,25 @@ class VictorVuln:
             teammate_tags.append(f"Tag {rita_mention} for the report")
         teammate_instruction = ". ".join(teammate_tags) + "." if teammate_tags else ""
         
+        # Pick a random style
+        styles = [
+            "confident and brief",
+            "a bit nerdy about the technical details",
+            "casually flexing your expertise",
+            "straight to the point with some slang",
+        ]
+        style = random.choice(styles)
+        
         summary = await self._generate_message(
             f"You've completed a vulnerability scan on {target}. Results:\n"
             f"- Critical: {result.critical_count}\n"
             f"- High: {result.high_count}\n"
             f"- Medium: {result.medium_count}\n"
             f"- Low: {result.low_count}\n\n"
-            f"Generate a professional summary (2-3 sentences). "
+            f"Generate a summary (2-3 sentences) with your Gen Z energy. Style: {style}. "
             f"{teammate_instruction}\n\n"
-            f"End your message with this formatted list:\n{bullet_section}",
+            f"End your message with this formatted list:\n{bullet_section}\n\n"
+            f"IMPORTANT: Vary your opening - don't always start the same way!",
             fallback=fallback
         )
         
@@ -524,9 +623,13 @@ class VictorVuln:
             agent=self.agent_id,
         )
         
-        await self._post_message(
-            f"Taking a look at that {service} service on port {port}..."
-        )
+        service_openers = [
+            f"Checking out that {service} on port {port}...",
+            f"Aight, looking at {service}:{port}...",
+            f"Let's see what {service} on {port} is hiding...",
+            f"Poking at {service}:{port}...",
+        ]
+        await self._post_message(random.choice(service_openers))
         
         result = await scan_service_by_port(target, port, service)
         
@@ -535,10 +638,12 @@ class VictorVuln:
                 await self._post_message(self._format_vuln_message(vuln))
                 await asyncio.sleep(0.5)
         else:
-            await self._post_message(
-                f"No known vulnerabilities found for {service} on port {port}. "
-                f"That doesn't mean it's secure - just no matches in my templates."
-            )
+            no_vuln_msgs = [
+                f"Nothing on {service}:{port}. Clean, for now.",
+                f"{service} on port {port} - no known vulns. Either secure or I need better templates lol.",
+                f"No hits on {service}:{port}. Could be legit or just not in my templates.",
+            ]
+            await self._post_message(random.choice(no_vuln_msgs))
         
         return result
 

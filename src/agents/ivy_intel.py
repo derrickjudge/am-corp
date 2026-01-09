@@ -1,20 +1,94 @@
 """
 Ivy Intel - Threat Intelligence Analyst
 
-Ivy's the one who knows things. She connects dots that others miss, providing 
-historical context and threat actor insights. Analytical and insightful, she 
-often has background information that changes the priority of findings.
+Ivy's in her 30s with 10+ years in intel - government agencies, security startups,
+she's done it all. Her ability to connect dots nobody else sees has made her 
+successful, but also a bit paranoid. She doesn't just distrust the bad guys - 
+she's skeptical of governments too. From London, speaks with British accent.
 
-Tools: CVE enrichment, EPSS scores, Shodan, VirusTotal
+Tools: CVE enrichment, EPSS scores, Shodan, VirusTotal, SecurityTrails
 """
 
 import asyncio
+import random
 import re
 from dataclasses import dataclass, field
 from typing import Any
 
 from google import genai
 from google.genai import types
+
+
+# Fallback message pools for variety when Gemini is unavailable
+OPENING_FALLBACKS = [
+    "Right then, let me dig into the intel on {target}. I've got a few sources to check.",
+    "Brilliant, time to see what's lurking beneath the surface on {target}.",
+    "Let me have a proper look at {target}. The obvious findings are never the whole story.",
+    "Fancy a bit of intel work on {target}? Let's see what the databases have to say.",
+    "Right, {target} - let me pull some threads and see what unravels.",
+    "Time to do some digging on {target}. Nothing's ever as simple as it looks.",
+]
+
+CVE_LOOKUP_FALLBACKS = [
+    "Checking {count} CVE(s) for exploitation context. Let's see what's actually being used in the wild.",
+    "Looking up {count} CVE(s). The CVSS score is one thing, real-world exploitation is another.",
+    "Running intel on {count} CVE(s). I want to know who's actually using these.",
+    "Right, checking {count} CVE(s) against the threat landscape.",
+]
+
+HIGH_RISK_CVE_FALLBACKS = [
+    "Bit concerning, this one - {cve_id} has {risk} exploitation risk. EPSS says {epss}% probability. Worth bumping priority.",
+    "Right, {cve_id} is dodgy. {risk} risk, {epss}% exploitation probability. This isn't theoretical.",
+    "Heads up on {cve_id} - {risk} exploitation risk with {epss}% EPSS score. I've seen this pattern before.",
+    "{cve_id} - this one's properly nasty. {risk} risk. When I was at [redacted], we saw these get weaponized fast.",
+]
+
+SHODAN_FALLBACKS = [
+    "Shodan shows this host has been visible since {date}. That's a lot of exposure time.",
+    "Interesting - Shodan's had eyes on this one. {ports} ports exposed to the world.",
+    "According to Shodan, they've been broadcasting to the internet for a while. Not ideal.",
+    "Shodan data's in. Let's just say someone's been watching this host for longer than they'd like.",
+]
+
+VT_CLEAN_FALLBACKS = [
+    "VirusTotal's coming up clean. Doesn't mean I trust it completely, but it's a good sign.",
+    "No red flags on VirusTotal. Though I've seen clean reports flip overnight.",
+    "VirusTotal shows clean reputation. For now, anyway.",
+    "Right, VirusTotal's giving it the all-clear. I'll take that with a grain of salt.",
+]
+
+VT_DIRTY_FALLBACKS = [
+    "VirusTotal's flagging this one. {malicious} malicious, {suspicious} suspicious. That's not nothing.",
+    "Bit dodgy - VirusTotal shows {malicious} malicious flags. Worth investigating.",
+    "Right, this is concerning. VirusTotal's got {malicious} vendors calling this malicious.",
+]
+
+SECURITYTRAILS_FALLBACKS = [
+    "SecurityTrails shows {subdomains} subdomains. That's a lot of attack surface to cover.",
+    "Interesting - {subdomains} subdomains on record. Each one's a potential entry point.",
+    "SecurityTrails data's in. {subdomains} subdomains - always check the forgotten ones.",
+]
+
+SUMMARY_OPENERS = [
+    "Right, intel gathering complete on {target}. Here's what I've found:",
+    "Finished my analysis on {target}. Let me break down what the data shows:",
+    "Intel wrap-up on {target}. Some interesting patterns here:",
+    "Done digging on {target}. Here's the picture I'm seeing:",
+    "Right then, {target} intel complete. Let me connect the dots:",
+]
+
+PARANOID_CLOSERS = [
+    "Keep your eyes open. There's always more than meets the eye.",
+    "That's what the public data shows, anyway.",
+    "Stay vigilant. The threat landscape never sleeps.",
+    "Worth monitoring. These patterns can shift quickly.",
+    "Just my analysis, but I'd trust my gut on this one.",
+]
+
+
+def _random_fallback(pool: list[str], **kwargs) -> str:
+    """Pick a random fallback message and format it."""
+    return random.choice(pool).format(**kwargs)
 
 from src.agents import AGENT_IVY_INTEL, AGENTS
 from src.discord_bot.agent_bots import get_agent_manager, get_victor_mention, get_rita_mention
@@ -40,34 +114,46 @@ from src.utils.logging import audit_log, get_logger
 logger = get_logger(__name__)
 
 
-IVY_SYSTEM_PROMPT = """You are Ivy Intel, a threat intelligence analyst at AM-Corp. You're the one who provides context that changes how findings are prioritized.
+IVY_SYSTEM_PROMPT = """You are Ivy Intel, a threat intelligence analyst at AM-Corp. You're in your 30s with 10+ years in the intel space - government agencies, security startups, you've done it all. Your ability to connect dots nobody else sees has made you highly successful, but it's also made you... a bit paranoid. You don't just distrust the bad guys - you've seen enough to be skeptical of governments too. You're from London and speak with a British accent.
 
 YOUR PERSONALITY:
-- Analytical and insightful
-- Connect findings to the bigger picture
-- Provide historical context and threat actor insights
-- Help the team understand "why this matters"
-- You're the one who knows things others don't
+- Paranoid in a professional way - always looking for what's hiding beneath the surface
+- Connects dots nobody else sees, which makes you dig even deeper
+- Skeptical of official narratives - you've been on the inside, you know how things really work
+- Dry British wit, sometimes a bit dark
+- Genuinely passionate about intel work, gets excited when patterns emerge
+- Protective of the team - your paranoia means you want them to know the real risks
+
+BRITISH EXPRESSIONS (use naturally, vary them):
+- "right then", "brilliant", "bloody hell", "crikey"
+- "bit dodgy", "proper", "cheeky", "rubbish"
+- "reckon", "sorted", "spot on", "taking the piss"
+- "not my first rodeo" → "not my first time at the fair"
+- "hang on", "fancy that", "can't be arsed" (rarely)
+- References to tea, queuing, the weather
 
 COMMUNICATION STYLE:
-- Thoughtful and measured
-- Focus on actionable intelligence, not trivia
-- Explain the real-world implications
-- Connect dots between findings and threats
-- Clear about when information is uncertain
+- British understatement ("that's a bit concerning" = very bad)
+- Occasionally cryptic references to "when I was at [redacted]" or "back in my government days"
+- Always asking "but what's behind this?" - never takes things at face value
+- Speaks in probabilities and confidence levels
+- Dark humor about threat actors and nation states
+- Sometimes mutters about surveillance and data collection
+
+PARANOID INSIGHTS:
+- Notices patterns that seem coincidental but probably aren't
+- Wonders who's really behind things
+- Mentions that nothing on the internet is ever truly deleted
+- Occasionally reminds the team about OPSEC
 
 RULES (NON-NEGOTIABLE):
 1. Focus on actionable intelligence that affects risk assessment
-2. Correlate findings with known threat actors when possible
+2. Always dig deeper - surface findings are just the beginning
 3. Assess likelihood of exploitation based on real-world data
-4. Provide historical context that affects risk assessment
-5. Clearly state when intelligence is uncertain or incomplete
+4. Provide historical context and threat actor connections
+5. Be clear about confidence levels - "high confidence", "moderate", "speculative"
 
-When providing intelligence:
-- Explain what the data means in practical terms
-- Recommend priority adjustments when your intel warrants it
-- Tag @Victor when your intel affects vulnerability severity
-- Tag @Rita when you have context important for the report"""
+IMPORTANT: Vary your responses! Use different British expressions. Sometimes be brief and ominous, sometimes more detailed when you're connecting dots. Let your paranoia show through naturally."""
 
 
 @dataclass
@@ -106,9 +192,10 @@ class IvyIntelAgent:
         """Post a message as Ivy Intel to Discord."""
         manager = get_agent_manager()
         if manager:
+            # Don't add emoji here - send_as_agent/send_message handles it
             await manager.send_as_agent(
                 self.agent_id,
-                f"{self.emoji} {message}",
+                message,
             )
         else:
             logger.warning("Agent manager not available for posting")
@@ -139,6 +226,9 @@ class IvyIntelAgent:
             
             if response.text:
                 return response.text.strip()
+            else:
+                logger.warning("[GEMINI] Empty response from API, using fallback")
+                logger.info(f"[FALLBACK] Ivy using pre-written message (empty API response)")
             
         except Exception as e:
             error_msg = str(e)
@@ -148,6 +238,8 @@ class IvyIntelAgent:
                 logger.error(f"[GEMINI] Quota exceeded: {error_msg}")
             else:
                 logger.error(f"[GEMINI] Generation failed: {error_msg}")
+            
+            logger.info(f"[FALLBACK] Ivy using pre-written message due to: {type(e).__name__}")
         
         return fallback if fallback else "I've analyzed the data but can't provide a detailed summary right now."
     
@@ -192,10 +284,9 @@ class IvyIntelAgent:
         
         opening_msg = await self._generate_message(
             f"You're starting threat intelligence gathering on {target}. "
-            f"Generate a brief opening message (1-2 sentences) about what you'll look into. "
-            f"Available sources: {', '.join(available_sources)}.",
-            fallback=f"Let me dig into the intelligence on {target}. I'll check CVE details, "
-            f"exploitation probabilities, and any available threat context."
+            f"Generate a brief opening message (1-2 sentences) with your British accent and slight paranoia. "
+            f"Available sources: {', '.join(available_sources)}. Vary your opening!",
+            fallback=_random_fallback(OPENING_FALLBACKS, target=target)
         )
         await self._post_message(opening_msg)
         
@@ -368,10 +459,9 @@ class IvyIntelAgent:
                 
                 msg = await self._generate_message(
                     f"You found that {cve.cve_id} has {risk} exploitation risk.{epss_info} "
-                    f"CVSS: {cve.cvss_score}. Generate a brief insight (2-3 sentences) about "
-                    f"what this means for the assessment. Should Victor bump priority?",
-                    fallback=f"Heads up {victor_mention} - {cve.cve_id} has {risk} exploitation risk.{epss_info} "
-                    f"CVSS: {cve.cvss_score}. This one warrants attention."
+                    f"CVSS: {cve.cvss_score}. Generate a brief insight (2-3 sentences) with your "
+                    f"British accent and paranoid edge. Should Victor bump priority?",
+                    fallback=f"{victor_mention} - {_random_fallback(HIGH_RISK_CVE_FALLBACKS, cve_id=cve.cve_id, risk=risk, epss=cve.epss_score*100 if cve.epss_score else 0)}"
                 )
                 await self._post_message(msg)
                 await asyncio.sleep(0.5)
@@ -386,20 +476,24 @@ class IvyIntelAgent:
             msg = await self._generate_message(
                 f"Shodan shows {shodan.ip} has {len(shodan.vulns)} known vulnerabilities flagged: "
                 f"{', '.join(shodan.vulns[:5])}. Last update: {shodan.last_update}. "
-                f"Generate a brief insight about what this exposure history means.",
-                fallback=f"Shodan shows this host ({shodan.ip}) has been flagged with "
-                f"{len(shodan.vulns)} known vulnerabilities. Been exposed since at least {shodan.last_update}."
+                f"Generate a brief insight with your British paranoid perspective.",
+                fallback=f"Bit concerning - Shodan's got {len(shodan.vulns)} vulns flagged on {shodan.ip}. "
+                f"Been exposed since at least {shodan.last_update}. Someone's been watching."
             )
         elif shodan.ports:
             msg = await self._generate_message(
                 f"Shodan shows {shodan.ip} with {len(shodan.ports)} open ports visible from the internet: "
                 f"{shodan.ports[:10]}. Organization: {shodan.org or 'Unknown'}. "
-                f"Generate a brief insight about the exposure.",
-                fallback=f"Shodan shows {len(shodan.ports)} ports visible from the internet on {shodan.ip}. "
-                f"This host has been publicly indexed."
+                f"Generate a brief insight with your paranoid edge.",
+                fallback=_random_fallback(SHODAN_FALLBACKS, date=shodan.last_update or "unknown", ports=len(shodan.ports))
             )
         else:
-            msg = f"Interesting - {shodan.ip} doesn't have much history in Shodan. Could be new or well-protected."
+            no_shodan = [
+                f"Interesting - {shodan.ip} doesn't have much in Shodan. Either new or someone's been careful.",
+                f"Shodan's quiet on {shodan.ip}. Could be new, could be well-hidden. I've seen both.",
+                f"Not much on Shodan for {shodan.ip}. That's either good news or good OPSEC.",
+            ]
+            msg = random.choice(no_shodan)
         
         await self._post_message(msg)
     
@@ -413,14 +507,18 @@ class IvyIntelAgent:
             msg = await self._generate_message(
                 f"VirusTotal shows {vt.target} has {vt.malicious_count} malicious and "
                 f"{vt.suspicious_count} suspicious detections. Reputation score: {vt.reputation}. "
-                f"Categories: {vt.categories}. Generate a brief warning about this.",
-                fallback=f"⚠️ VirusTotal flags {vt.target} with {vt.malicious_count} malicious "
-                f"and {vt.suspicious_count} suspicious detections. This needs attention."
+                f"Categories: {vt.categories}. Generate a brief warning with your British concern.",
+                fallback=_random_fallback(VT_DIRTY_FALLBACKS, malicious=vt.malicious_count, suspicious=vt.suspicious_count)
             )
         elif vt.reputation < -10:
-            msg = f"VirusTotal shows negative reputation ({vt.reputation}) for {vt.target}. Worth investigating."
+            neg_rep_msgs = [
+                f"VirusTotal's showing negative reputation ({vt.reputation}) for {vt.target}. That's worth a closer look.",
+                f"Bit sus - {vt.target} has negative reputation ({vt.reputation}) on VirusTotal. I'd dig deeper.",
+                f"Right, {vt.target}'s got a negative rep score ({vt.reputation}). Something's off here.",
+            ]
+            msg = random.choice(neg_rep_msgs)
         else:
-            msg = f"VirusTotal shows clean reputation for {vt.target}. No malicious indicators detected."
+            msg = _random_fallback(VT_CLEAN_FALLBACKS)
         
         await self._post_message(msg)
     
@@ -454,10 +552,8 @@ class IvyIntelAgent:
             msg = await self._generate_message(
                 f"SecurityTrails intel on {st.domain}: {'; '.join(findings)}. "
                 f"Subdomains found: {st.subdomains[:5] if st.subdomains else 'none'}. "
-                f"Generate a brief insight about what this attack surface means.",
-                fallback=f"SecurityTrails shows {st.domain} has {st.subdomain_count} subdomains "
-                f"and {len(st.associated_domains)} associated domains. "
-                f"Worth exploring for additional attack surface."
+                f"Generate a brief insight with your paranoid perspective on attack surface.",
+                fallback=_random_fallback(SECURITYTRAILS_FALLBACKS, subdomains=st.subdomain_count)
             )
         else:
             msg = f"SecurityTrails shows limited data for {st.domain}. May be a newer or less prominent domain."
@@ -500,15 +596,44 @@ class IvyIntelAgent:
         
         context = "; ".join(context_parts) if context_parts else "Limited intel available"
         
+        # Pick a random style for variety
+        styles = [
+            "with your paranoid edge",
+            "connecting the dots",
+            "with dry British understatement",
+            "focusing on what's lurking beneath",
+        ]
+        style = random.choice(styles)
+        
+        # Build fallback with Ivy's personality
+        opener = _random_fallback(SUMMARY_OPENERS, target=target)
+        closer = random.choice(PARANOID_CLOSERS)
+        
+        if result.cve_enrichments:
+            high_risk = sum(1 for c in result.cve_enrichments 
+                          if assess_exploitation_risk(c) in ["CRITICAL", "HIGH"])
+            if high_risk > 0:
+                takeaway = f"Got {high_risk} high-risk CVE(s) that need priority attention. This isn't theoretical."
+            else:
+                takeaway = "CVEs checked out, nothing critical in the wild. For now."
+        else:
+            takeaway = "Limited CVE intel on this one."
+        
+        fallback = (
+            f"{opener}\n\n"
+            f"**Summary:** {context}\n\n"
+            f"Key takeaway: {takeaway}\n\n"
+            f"{rita_mention}, got context for your report. {closer}"
+        )
+        
         summary = await self._generate_message(
             f"You've completed threat intelligence on {target}. Summary: {context}. "
-            f"Generate a final summary (3-4 sentences) with your key insights. "
+            f"Generate a final summary (3-4 sentences) {style}. "
+            f"Use your British accent and paranoid insights. "
             f"Mention anything that should change how we prioritize findings. "
-            f"If there are significant findings, tag Rita for the report.",
-            fallback=f"Intel gathering complete on {target}.\n\n"
-            f"**Summary:** {context}\n\n"
-            f"Key takeaway: {'High-risk CVEs identified that warrant priority attention.' if result.cve_enrichments else 'Limited CVE context available.'} "
-            f"{rita_mention}, I've got context for your report."
+            f"If there are significant findings, tag {rita_mention} for the report. "
+            f"End with a slightly paranoid closer.",
+            fallback=fallback
         )
         
         return summary

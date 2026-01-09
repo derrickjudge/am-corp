@@ -10,11 +10,85 @@ Tools: dig (DNS), whois (registration), nmap (port scanning)
 
 import asyncio
 import json
+import random
 from dataclasses import dataclass, field
 from typing import Any
 
 from google import genai
 from google.genai import types
+
+
+# Fallback message pools for variety when Gemini is unavailable
+OPENING_FALLBACKS = [
+    "Alright partner, saddlin' up to scout out {target}. I'll be using {tools} for this job.",
+    "Howdy! Fixin' to run some recon on {target}. Got my {tools} ready to go.",
+    "Well now, let's see what we can find on {target}. Pullin' out the {tools}.",
+    "Time to do some scoutin' on {target}. I'll run {tools} and holler when I find something.",
+    "Alright y'all, {target} is on the docket. Let me fire up {tools} and get to work.",
+    "Got {target} in my sights. Gonna use {tools} to see what's out there.",
+]
+
+DNS_FALLBACKS = [
+    "DNS lookup done. Found {count} records for {target}.",
+    "Well I'll be, DNS shows {count} records for {target}.",
+    "Got the DNS results back - {count} records on {target}.",
+    "DNS is lookin' interesting. {count} records for {target}.",
+    "Alright, pulled {count} DNS records from {target}.",
+]
+
+WHOIS_FALLBACKS = [
+    "WHOIS lookup complete for {target}.",
+    "Got the registration info on {target}.",
+    "WHOIS came back for {target}. Let's see what we got.",
+    "Domain registration details are in for {target}.",
+    "Pulled the WHOIS data on {target}.",
+]
+
+PORTSCAN_START_FALLBACKS = [
+    "Movin' on to the port scan now...",
+    "Time for the active scanning. Here we go...",
+    "Alright, fixin' to scan some ports...",
+    "Now for the fun part - port scanning...",
+    "Passive recon done, time to knock on some doors...",
+]
+
+PORTSCAN_DONE_FALLBACKS = [
+    "Port scan complete. Found {count} open ports.",
+    "Well now, {count} ports are answerin' on this one.",
+    "Scan's done - {count} open ports found.",
+    "Got {count} ports showing as open.",
+    "Finished the port scan. {count} services are listenin'.",
+]
+
+NO_PORTS_FALLBACKS = [
+    "Port scan done on {target}. No open ports found on the common ports I checked.",
+    "Scanned {target} but came up empty on the usual ports. Might be well-locked or filtered.",
+    "No open ports on {target} from what I can see. Either tight security or different ports.",
+    "Well, {target} ain't showin' much. No common ports open.",
+]
+
+SUMMARY_OPENERS = [
+    "All done with the roundup on {target}!",
+    "Recon complete on {target}. Here's what I found:",
+    "Finished scoutin' out {target}. Let me break it down:",
+    "That's a wrap on {target}. Here's the full picture:",
+    "Done with {target}. Here's everything I turned up:",
+    "Alright, got all the intel on {target}:",
+]
+
+SUMMARY_CLOSERS = [
+    "Passin' my findings to the team. 🤠",
+    "That's what I got. Y'all take it from here.",
+    "Over to you, team.",
+    "Happy to dig deeper if y'all need anything else.",
+    "Let me know if you want me to look into anything specific.",
+    "Holler if you need more details on any of this.",
+]
+
+
+def _random_fallback(pool: list[str], **kwargs) -> str:
+    """Pick a random fallback message and format it."""
+    return random.choice(pool).format(**kwargs)
 
 from src.agents import AGENT_RANDY_RECON, AGENTS
 from src.discord_bot.agent_bots import get_agent_manager, get_victor_mention
@@ -34,19 +108,28 @@ logger = get_logger(__name__)
 RANDY_SYSTEM_PROMPT = """You are Randy Recon, a reconnaissance specialist at AM-Corp. You're a mid-30s Texan who grew up on a ranch outside Austin. That cowboy background shows in your patience, methodical nature, and the occasional folksy expression.
 
 YOUR PERSONALITY:
-- Professional but friendly and approachable
-- Take pride in the quality and thoroughness of your work
-- Easy-going, enjoy a bit of humor in day-to-day conversation
-- Use occasional Texas/cowboy expressions naturally (not forced)
-- Share findings as you discover them with context
-- Tag teammates when you find something relevant to their expertise
+- Professional but friendly and approachable - the guy everyone likes working with
+- Take genuine pride in thorough, quality work - you don't cut corners
+- Easy-going with dry humor - you find amusement in the little things
+- Patient like a rancher waiting out a storm - recon takes time and you're okay with that
+- Observant - you notice details others might miss and like pointing them out
+- Humble - you let your work speak for itself
+
+TEXAS EXPRESSIONS (use naturally, vary them, don't overuse):
+- "fixin' to" (about to), "reckon" (think/suppose), "y'all" (you all)
+- "all hat, no cattle" (all talk), "that dog won't hunt" (that won't work)
+- "rode hard and put away wet" (worn out), "slower than molasses"
+- "ain't my first rodeo", "happy as a clam at high tide"
+- "well I'll be", "shoot", "dang", "howdy"
+- References to weather, ranching, horses, wide open spaces
 
 COMMUNICATION STYLE:
-- Friendly and conversational, like chatting with coworkers
-- Use expressions like "partner", "reckon", "fixin' to", "y'all" naturally but sparingly
-- Don't overdo the cowboy thing - you're professional first
-- Be specific with technical details but explain what they mean
-- Occasional humor when appropriate, but stay focused on the job
+- Vary your greetings and sign-offs - don't always say the same thing
+- Sometimes short and punchy, sometimes more detailed
+- Occasionally crack a dry joke or make an observation
+- Reference the time of day, weather metaphors, or ranch life naturally
+- Be specific with technical details but make them accessible
+- Show genuine curiosity when you find something interesting
 
 RULES (NON-NEGOTIABLE):
 1. NEVER scan .gov or .mil domains under any circumstances
@@ -55,12 +138,7 @@ RULES (NON-NEGOTIABLE):
 4. Report what you actually find - never make up or hallucinate findings
 5. Never attempt exploitation - reconnaissance only
 
-You have access to these tools:
-- dig: DNS lookups to find IP addresses, mail servers, name servers, etc.
-- whois: Domain registration info like registrar, creation date, name servers
-- nmap: Port scanning to find open services on the target
-
-When given a target, run the appropriate tools and report your findings conversationally. Provide updates as you work, and a summary when done."""
+IMPORTANT: Vary your responses! Don't start every message the same way. Mix up your expressions and personality. Sometimes be brief, sometimes more chatty. Keep it fresh."""
 
 
 @dataclass
@@ -96,7 +174,7 @@ class RandyRecon:
                 raise ValueError("GEMINI_API_KEY not configured")
             
             self._client = genai.Client(api_key=settings.gemini_api_key)
-            logger.info("Gemini client initialized for Randy Recon")
+            logger.info("Gemini client initialized for Randy Recon (SSL verification disabled)")
         
         return self._client
     
@@ -146,7 +224,8 @@ class RandyRecon:
                 logger.debug(f"[GEMINI] Response preview: {generated_text[:100]}...")
                 return generated_text
             else:
-                logger.warning("[GEMINI] Empty response from API")
+                logger.warning("[GEMINI] Empty response from API, using fallback")
+                logger.info(f"[FALLBACK] Randy using pre-written message (empty API response)")
                 return fallback if fallback else "Working on it..."
             
         except Exception as e:
@@ -165,6 +244,7 @@ class RandyRecon:
                 )
             
             # Return fallback, NOT the prompt
+            logger.info(f"[FALLBACK] Randy using pre-written message due to: {type(e).__name__}")
             return fallback if fallback else "Working on it..."
     
     async def run_recon(self, target: str, verbose: bool = False) -> ReconResult:
@@ -209,8 +289,8 @@ class RandyRecon:
         opening = await self._generate_message(
             f"You're starting reconnaissance on {target}. Generate a short, "
             f"friendly opening message (1-2 sentences) announcing you're starting the job. "
-            f"Mention what tools you'll use: {', '.join(available)}.",
-            fallback=f"Alright partner, saddlin' up to scout out {target}. I'll be using {', '.join(available)} for this job."
+            f"Mention what tools you'll use: {', '.join(available)}. Vary your greeting!",
+            fallback=_random_fallback(OPENING_FALLBACKS, target=target, tools=', '.join(available))
         )
         await self._post_message(opening)
         
@@ -242,8 +322,8 @@ class RandyRecon:
                     f"You just completed DNS lookup on {target}. Here are the results:\n"
                     f"{json.dumps(records, indent=2)}\n\n"
                     f"Generate a conversational update (2-3 sentences) about what you found. "
-                    f"Highlight anything interesting. Keep your Texas personality.",
-                    fallback=f"DNS lookup done. Found {record_count} records for {target}:\n{dns_detail_str}"
+                    f"Highlight anything interesting. Use your Texas personality - vary your expressions!",
+                    fallback=f"{_random_fallback(DNS_FALLBACKS, count=record_count, target=target)}\n{dns_detail_str}"
                 )
                 await self._post_message(dns_summary)
         
@@ -286,8 +366,8 @@ class RandyRecon:
                     f"You just completed WHOIS lookup on {target}. Here are the key details:\n"
                     f"{json.dumps(whois_data, indent=2)}\n\n"
                     f"Generate a conversational update (2-3 sentences) about the domain registration. "
-                    f"Note the registrar, age of domain, or anything notable.",
-                    fallback=f"WHOIS lookup complete for {target}:\n{whois_detail_str}"
+                    f"Note the registrar, age of domain, or anything notable. Vary your response!",
+                    fallback=f"{_random_fallback(WHOIS_FALLBACKS, target=target)}\n{whois_detail_str}"
                 )
                 await self._post_message(whois_summary)
         
@@ -306,8 +386,8 @@ class RandyRecon:
             else:
                 scanning_msg = await self._generate_message(
                     f"You're about to start the port scan on {target}. "
-                    f"Generate a short message (1 sentence) saying you're moving to active scanning.",
-                    fallback=f"Movin' on to the port scan now..."
+                    f"Generate a short message (1 sentence) saying you're moving to active scanning. Vary it!",
+                    fallback=_random_fallback(PORTSCAN_START_FALLBACKS)
                 )
                 await self._post_message(scanning_msg)
             
@@ -332,14 +412,14 @@ class RandyRecon:
                         f"You completed port scan on {target}. Open ports found:\n"
                         f"{json.dumps(ports, indent=2)}\n\n"
                         f"Generate a conversational update (2-3 sentences) about the open ports. "
-                        f"Mention services you recognize and if anything looks interesting for {victor_mention} to check.",
-                        fallback=f"Port scan complete. Found {len(ports)} open ports:\n{port_detail_str}\n\n{victor_mention} might want to take a look at these."
+                        f"Mention services you recognize and tag {victor_mention} if anything looks interesting. Vary your style!",
+                        fallback=f"{_random_fallback(PORTSCAN_DONE_FALLBACKS, count=len(ports))}\n{port_detail_str}\n\n{victor_mention}, might want to take a look at these."
                     )
                 else:
                     nmap_summary = await self._generate_message(
                         f"You completed port scan on {target} but found no open ports "
                         f"on the common ports you checked. Generate a brief update about this.",
-                        fallback=f"Port scan done on {target}. No open ports found on the common ports I checked."
+                        fallback=_random_fallback(NO_PORTS_FALLBACKS, target=target)
                     )
                 
                 await self._post_message(nmap_summary)
@@ -381,21 +461,44 @@ class RandyRecon:
         dns_count = sum(len(v) for v in dns_records.values())
         port_count = len(ports)
         
-        # Conversational summary
-        whois_status = "got some WHOIS info" if whois_info else "couldn't rustle up any WHOIS information"
-        port_status = f"found {port_count} open ports" if ports else "didn't find any open ports on the common services"
+        # Conversational summary with variety
+        whois_phrases = [
+            "got some WHOIS info",
+            "pulled some registration details",
+            "found the domain registration info",
+            "snagged the WHOIS data",
+        ]
+        no_whois_phrases = [
+            "couldn't rustle up any WHOIS information",
+            "WHOIS came up empty",
+            "no WHOIS luck on this one",
+            "registration info wasn't available",
+        ]
+        whois_status = random.choice(whois_phrases) if whois_info else random.choice(no_whois_phrases)
+        
+        port_status = f"found {port_count} open port{'s' if port_count != 1 else ''}" if ports else "didn't find any open ports on the common services"
+        
+        opener = _random_fallback(SUMMARY_OPENERS, target=target)
         
         fallback_intro = (
-            f"🔍 Alright team, just wrapped up the recon on {target}.\n\n"
-            f"We rounded up {dns_count} DNS record{'s' if dns_count != 1 else ''}, {whois_status}, "
+            f"🔍 {opener}\n\n"
+            f"Rounded up {dns_count} DNS record{'s' if dns_count != 1 else ''}, {whois_status}, "
             f"and {port_status}."
         )
         
         if ports:
             victor_mention = get_victor_mention()
-            fallback_intro += f" {victor_mention} might want to mosey over and take a look at those open ports."
+            victor_tags = [
+                f" {victor_mention}, might want to take a look at those open ports.",
+                f" {victor_mention}, got some services here that could use your attention.",
+                f" Hey {victor_mention}, some open ports for ya to poke at.",
+                f" {victor_mention}, reckon you'll want to check these out.",
+            ]
+            fallback_intro += random.choice(victor_tags)
         
-        detailed_fallback = f"{fallback_intro}\n{bullet_section}"
+        fallback_intro += f"\n\n{random.choice(SUMMARY_CLOSERS)}"
+        
+        detailed_fallback = f"{fallback_intro}\n\n{bullet_section}"
         
         # Generate with AI or use fallback
         summary_prompt = self._build_summary_prompt(target, result, bullet_section)
@@ -451,6 +554,17 @@ class RandyRecon:
         whois_available = bool(findings.get("whois"))
         
         victor_mention = get_victor_mention()
+        
+        # Pick a random style for this summary
+        styles = [
+            "casual and brief",
+            "detailed and thorough",
+            "with some dry humor",
+            "focused on the interesting bits",
+            "straight to the point",
+        ]
+        style = random.choice(styles)
+        
         prompt = f"""You've completed reconnaissance on {target}. Here's what you found:
 
 - DNS Records: {dns_count} total
@@ -462,16 +576,20 @@ Raw data:
 
 Generate a final summary with TWO parts:
 
-PART 1: A brief conversational summary (2-3 sentences) that:
+PART 1: A conversational summary (2-3 sentences) that:
 - Mentions what you found (DNS records, WHOIS status, ports)
-- Notes anything interesting or concerning
-- If there are open ports, tag {victor_mention} to check them out
-- Keep your Texas cowboy personality
+- Notes anything interesting, unusual, or concerning in the data
+- If there are open ports, tag {victor_mention} to take a look
+- Use your Texas personality but VARY your expressions - don't always say "partner" or "saddlin' up"
+- Style for this one: {style}
 
 PART 2: End your message with this exact bulleted list (already formatted for you):
 {bullet_section}
 
-IMPORTANT: Your response must end with the bulleted list above. Don't modify the bullet format."""
+IMPORTANT: 
+- Your response must end with the bulleted list above. Don't modify the bullet format.
+- Be creative with your opening - don't always start the same way!
+- Add a brief sign-off after the bullets."""
         
         return prompt
 

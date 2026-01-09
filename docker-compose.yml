@@ -28,10 +28,6 @@ services:
       - ./logs:/app/logs
       - nuclei-templates:/app/nuclei-templates
     
-    # Network access for Discord API, Gemini API, and scanning
-    networks:
-      - am-corp-network
-    
     # Resource limits
     deploy:
       resources:
@@ -41,13 +37,6 @@ services:
         reservations:
           cpus: '0.5'
           memory: 512M
-
-# =============================================================================
-# Networks
-# =============================================================================
-networks:
-  am-corp-network:
-    driver: bridge
 
 # =============================================================================
 # Volumes

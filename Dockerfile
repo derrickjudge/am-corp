@@ -39,8 +39,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     # Cleanup
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
-    # Update CA certificates
+    && rm -rf /var/lib/apt/lists/*
+
+# Add custom CA certificates (e.g., corporate proxy certs)
+# These get added at build time and runtime via mount
+COPY certs/*.pem /usr/local/share/ca-certificates/custom/
+RUN for cert in /usr/local/share/ca-certificates/custom/*.pem; do \
+        if [ -f "$cert" ]; then \
+            cp "$cert" "/usr/local/share/ca-certificates/$(basename "$cert" .pem).crt"; \
+        fi; \
+    done \
     && update-ca-certificates
 
 # Install Nuclei vulnerability scanner

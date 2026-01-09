@@ -123,3 +123,6 @@ Thumbs.db
 
 # Local data cache
 data/
+
+# Local CA certificates (corporate proxy, etc.)
+certs/

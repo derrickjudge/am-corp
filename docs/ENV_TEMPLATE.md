@@ -42,8 +42,8 @@ DISCORD_WEBHOOK_ALERTS=
 # Gemini API key from Google AI Studio
 GEMINI_API_KEY=
 
-# Model selection (default: gemini-1.5-flash)
-GEMINI_MODEL=gemini-1.5-flash
+# Model selection (default: gemini-2.5-flash)
+GEMINI_MODEL=gemini-2.5-flash
 
 # =============================================================================
 # N8N CONFIGURATION
