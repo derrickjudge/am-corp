@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Initial project structure and documentation
+
+### Changed (2026-01-09)
+- **Container runtime**: Switched from Docker/Rancher Desktop to Podman for macOS
+  - Podman works correctly with Netskope corporate security
+  - Docker containers get blocked due to SSL interception issues
+  - Updated `docs/SETUP.md` and `docs/DEPLOYMENT.md` with Podman instructions
+  - Added `podman-compose` to requirements (installed via pip)
+- **Gemini model**: Updated default from `gemini-1.5-flash` to `gemini-2.5-flash`
+  - `gemini-1.5-flash` was deprecated/removed by Google around Jan 1, 2026
+  - Updated `src/utils/config.py` default
+  - Updated `docs/ENV_TEMPLATE.md`
+- **Gemini client**: Simplified client initialization in all agents
+  - Removed `httpx.Client(verify=False)` workaround (was for Rancher Desktop SSL issues)
+  - Now uses default `genai.Client(api_key=...)` without custom HTTP options
+  - Updated `randy_recon.py`, `victor_vuln.py`, `ivy_intel.py`
+- **docker-compose.yml**: Removed `network_mode: host` workaround (not needed with Podman)
 - **Docker containerization** (2026-01-01)
   - `Dockerfile` - Python 3.12 + security tools (dig, whois, nmap)
   - `docker-compose.yml` - Service definition with volumes and resource limits

@@ -29,10 +29,17 @@ This guide covers deploying AM-Corp to production environments. AM-Corp is desig
 
 ### Software Requirements
 
-- Docker 24.0+
-- Docker Compose 2.20+
+**For Production (Linux):**
+- Docker 24.0+ or Podman 4.0+
+- Docker Compose 2.20+ or podman-compose 1.0+
 - Linux (Ubuntu 22.04+ recommended)
 - Domain name (optional, for webhooks)
+
+**For Local Development (macOS):**
+- Podman 4.0+ (preferred over Docker/Rancher Desktop)
+- podman-compose 1.0+ (`pip install podman-compose`)
+
+> **Note:** Use Podman on macOS with corporate security tools (Netskope). Docker/Rancher Desktop containers may be blocked due to SSL interception issues.
 
 ---
 

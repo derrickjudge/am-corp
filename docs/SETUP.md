@@ -6,11 +6,12 @@ Before setting up AM-Corp, ensure you have the following installed:
 
 | Requirement | Version | Purpose |
 |-------------|---------|---------|
-| Docker | 24.0+ | Container runtime for n8n and services |
-| Docker Compose | 2.20+ | Multi-container orchestration |
-| Python | 3.11+ | CrewAI orchestration |
+| Podman | 4.0+ | Container runtime (preferred for macOS) |
+| podman-compose | 1.0+ | Multi-container orchestration |
+| Python | 3.12+ | CrewAI orchestration |
 | Git | 2.40+ | Version control |
-| Node.js | 18+ | Discord bot (if using discord.js) |
+
+> **Note:** Use Podman instead of Docker/Rancher Desktop on macOS with corporate security tools (e.g., Netskope). Docker containers may be blocked due to SSL interception issues.
 
 ---
 
@@ -27,16 +28,18 @@ cp .env.example .env
 # 3. Configure environment variables (see below)
 nano .env
 
-# 4. Start infrastructure
-docker-compose up -d
-
-# 5. Install Python dependencies
+# 4. Install Python dependencies (includes podman-compose)
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
-# 6. Run the orchestrator
-python src/main.py
+# 5. Build and start with Podman
+podman-compose build
+podman-compose up -d
+
+# 6. Verify running
+podman-compose ps
+podman-compose logs -f
 ```
 
 ---
@@ -81,17 +84,17 @@ RATE_LIMIT_WINDOW=3600
 
 ## Component Setup
 
-### 1. Docker Services (n8n)
+### 1. Container Services
 
 ```bash
-# Start n8n
-docker-compose up -d n8n
+# Start all services with Podman
+podman-compose up -d
 
-# Verify n8n is running
-curl http://localhost:5678/healthz
+# View running containers
+podman-compose ps
 
-# Access n8n UI
-open http://localhost:5678
+# Check logs
+podman-compose logs -f
 ```
 
 **Initial n8n Setup:**
@@ -184,8 +187,8 @@ am-corp/
 ### Development Mode
 
 ```bash
-# Terminal 1: Start Docker services
-docker-compose up
+# Terminal 1: Start Podman services
+podman-compose up
 
 # Terminal 2: Run orchestrator with hot reload
 source venv/bin/activate
@@ -221,8 +224,8 @@ pytest tests/test_agents.py
 ### Logs
 
 ```bash
-# Docker logs
-docker-compose logs -f n8n
+# Container logs
+podman-compose logs -f
 
 # Application logs
 tail -f logs/am-corp.log

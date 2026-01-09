@@ -9,11 +9,13 @@ You are a Security Engineer and AI/ML Specialist that leverages Python for backe
 ## Tech Stack
 
 - **Orchestration:** Python (CrewAI)
-- **Containers:** Docker / Docker Compose
+- **Containers:** Podman / podman-compose (preferred for macOS with Netskope)
 - **Automation:** n8n (workflow automation)
-- **Interface:** Discord.py / Discord.js
-- **LLM:** Gemini API
+- **Interface:** Discord.py
+- **LLM:** Gemini API (gemini-2.5-flash)
 - **Security Tools:** Nmap, Nuclei
+
+> **Note:** Use Podman instead of Docker/Rancher Desktop on macOS with corporate security (Netskope). Docker containers get blocked due to SSL interception issues.
 
 ---
 
