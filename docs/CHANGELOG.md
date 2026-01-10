@@ -12,7 +12,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial project structure and documentation
 
-### Changed (2026-01-09)
+### Changed (2026-01-09) - Autonomous Agent Vision
+
+#### Product Vision Update
+- **PRD v0.2.0**: Major update to product vision for autonomous agents
+  - Agents as team members, not just tools
+  - Personality evolution and persistence
+  - Transparent thinking via thoughts channel
+  - Collaborative autonomy with consensus-seeking
+  - Memory and conversation history retention
+
+#### New Discord Channels (Planned)
+- `#am-corp-general` - Casual team conversation, security discussions
+- `#am-corp-thoughts` - Raw agent reasoning, doubts, step-by-step logic
+
+#### Documentation Updates
+- **AGENTS.md**: Complete rewrite for autonomous agent behavior
+  - Added personality evolution system
+  - Added thoughts channel behavior
+  - Added casual conversation patterns
+  - Added memory and persistence requirements
+  - Added chat frequency configuration per agent
+- **ARCHITECTURE.md**: Updated for new channel structure and autonomy features
+  - Added personality layer component
+  - Added thoughts channel flow
+  - Added autonomous initiative flow
+  - Added operating modes (production/test)
+- **.cursorrules**: Added autonomous agent development patterns
+  - Autonomy patterns for agent initiative
+  - Personality and memory requirements
+  - Thoughts channel guidelines
+  - Casual conversation rules
+- **Phase 5**: Created `phase-5-autonomous-agents.md`
+  - 2-week implementation plan
+  - Thoughts channel implementation
+  - Personality system design
+  - Personality evolution tracking
+  - General channel and casual chat
+  - Agent initiative and consensus
+  - Conversation memory (30-day retention)
+
+#### Technical Decisions
+- Personality state stored in YAML files under `config/personalities/`
+- Conversation history: 30-day retention with summarization
+- Thoughts verbosity levels: minimal, normal, verbose, all
+- Chat frequency: configurable per agent with work hours
+- Test mode: more chatty, synthetic data, no rate limits
+- Production mode: respects Gemini free tier (15 RPM, 1500 RPD)
+
+### Changed (2026-01-09) - Infrastructure
 - **Container runtime**: Switched from Docker/Rancher Desktop to Podman for macOS
   - Podman works correctly with Netskope corporate security
   - Docker containers get blocked due to SSL interception issues
@@ -192,6 +240,7 @@ Template for new releases:
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.2.0 | TBD | Autonomous agents, personality evolution, thoughts channel |
 | 0.1.0 | TBD | Initial release, core infrastructure |
 
 ---

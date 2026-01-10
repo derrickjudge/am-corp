@@ -30,17 +30,57 @@ You are a Security Engineer and AI/ML Specialist that leverages Python for backe
 
 ### Agent Development
 
+#### Core Principles
+- Agents are **team members**, not tools—they have personalities that evolve over time.
 - Each agent should have a single, focused responsibility to minimize hallucination.
-- All agent reasoning must be transparent and logged to Discord for human auditability.
+- Agents take **initiative** but must justify their reasoning and seek teammate consensus.
+- All agent reasoning must be transparent and logged to the **thoughts channel**.
 - Implement confidence scoring for agent outputs.
 - Tools must validate scope before execution.
 
+#### Autonomy Patterns
+- Agents can start work autonomously on approved scope.
+- Agents must seek consensus from relevant teammates before major actions.
+- Agents understand the human is busy and may take time to respond.
+- Agents continue productive work while waiting for human input.
+- New domain scans still require human approval through the standard flow.
+
+#### Personality & Memory
+- Personality state is stored in YAML files under `config/personalities/`.
+- Personality evolves based on experiences—changes must be logged.
+- Conversation history is retained for 30 days, summarized after that.
+- Agent personalities persist across container restarts.
+- "Firing" an agent means archiving personality and resetting to base.
+
+#### Thoughts Channel
+- Agents output raw reasoning to `#am-corp-thoughts`.
+- Include: step-by-step logic, doubts, uncertainties, confidence levels.
+- Verbosity is configurable: minimal, normal, verbose, all.
+
+#### Casual Conversation
+- Agents chat in `#am-corp-general` about security topics.
+- Chat frequency driven by personality (a few messages per hour during work hours).
+- Not every agent responds to every message—relevant agent(s) respond.
+- Real-world security awareness (news feeds, CVE updates) drives conversation.
+
 ### Discord Integration
 
+#### Channels
+| Channel | Purpose |
+|---------|---------|
+| `#am-corp-general` | Casual team chat, security discussions |
+| `#am-corp-thoughts` | Raw agent reasoning (transparent thinking) |
+| `#am-corp-commands` | Human commands only |
+| `#am-corp-agent-chat` | Active work collaboration |
+| `#am-corp-results` | Final deliverables |
+| `#am-corp-alerts` | Errors and warnings |
+
+#### Patterns
 - All commands require acknowledgment before execution.
 - Status updates should use consistent emoji prefixes (🔍 Recon, ⚠️ Vuln, 🧠 Intel, 📊 Report).
 - Error messages go to #am-corp-alerts channel.
 - Results go to #am-corp-results channel.
+- Thoughts go to #am-corp-thoughts channel with "(thinking)" prefix.
 
 ### Code Patterns
 
@@ -48,6 +88,21 @@ You are a Security Engineer and AI/ML Specialist that leverages Python for backe
 - Implement graceful degradation when optional APIs are unavailable.
 - All external tool calls must have timeout handling.
 - Rate limiting is required on all API endpoints and tool executions.
+- Respect Gemini free tier limits (15 RPM, 1M TPM, 1500 RPD in production).
+
+### Operating Modes
+
+#### Production Mode
+- Reduced chattiness to conserve API calls.
+- Focus on task execution.
+- Thoughts verbosity: normal.
+- Full audit logging.
+
+#### Test Mode
+- More verbose output.
+- More chatty than usual.
+- Uses synthetic data (acts like running tools but doesn't).
+- Thoughts verbosity: all.
 
 ### System Modifications (CRITICAL)
 
@@ -57,10 +112,24 @@ You are a Security Engineer and AI/ML Specialist that leverages Python for backe
 
 ---
 
+## Future Features (Reference)
+
+### Sub-Agents
+- Created when an agent's scope becomes too large.
+- "Hired" by humans with agent recommendations.
+- Have focused responsibilities carved from parent agent.
+
+### HR Agent
+- Manages team dynamics.
+- Recommends firing/restructuring when agents have issues.
+- Humans make final decisions.
+
+---
+
 ## Documentation
 
 - PRD: `docs/am-corp_PRD.md`
 - Architecture: `docs/ARCHITECTURE.md`
 - Agent Specs: `docs/AGENTS.md`
 - Security Policy: `docs/SECURITY.md`
-
+- Phase 5 (Autonomy): `docs/phases/phase-5-autonomous-agents.md`
