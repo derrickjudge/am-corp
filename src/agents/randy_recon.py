@@ -92,6 +92,11 @@ def _random_fallback(pool: list[str], **kwargs) -> str:
 
 from src.agents import AGENT_RANDY_RECON, AGENTS
 from src.agents.personality import get_personality_manager
+from src.agents.evolution import (
+    trigger_scan_completed,
+    trigger_finding_discovered,
+    trigger_pattern_observed,
+)
 from src.discord_bot.agent_bots import get_agent_manager, get_victor_mention
 from src.discord_bot.thoughts import post_thought, post_decision, post_finding, post_uncertainty
 from src.tools.recon_tools import (
@@ -696,6 +701,39 @@ class RandyRecon:
             agent=self.agent_id,
             dns_records=len(result.raw_findings.get("dns", {})),
             open_ports=len(result.raw_findings.get("ports", [])),
+        )
+        
+        # Trigger personality evolution based on scan results
+        findings_count = (
+            len(result.raw_findings.get("dns", {})) +
+            len(result.raw_findings.get("ports", []))
+        )
+        
+        evolution_context = {}
+        
+        # Check for patterns that trigger specific evolution
+        dns_records = result.raw_findings.get("dns", {})
+        if len(dns_records.get("MX", [])) > 3 or len(dns_records.get("NS", [])) > 3:
+            evolution_context["dns_complexity"] = True
+        
+        ports = result.raw_findings.get("ports", [])
+        if len(ports) > 10:
+            evolution_context["large_attack_surface"] = True
+        
+        # Check for API-related services
+        api_services = [p for p in ports if any(
+            kw in str(p.get("service", "")).lower() 
+            for kw in ["api", "rest", "graphql", "json"]
+        )]
+        if api_services:
+            evolution_context["api_endpoints_found"] = True
+        
+        await trigger_scan_completed(
+            agent_id=self.agent_id,
+            target=target,
+            success=True,
+            findings_count=findings_count,
+            context=evolution_context,
         )
         
         return result

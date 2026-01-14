@@ -25,6 +25,8 @@ DISCORD_CHANNEL_COMMANDS=
 DISCORD_CHANNEL_AGENT_CHAT=
 DISCORD_CHANNEL_RESULTS=
 DISCORD_CHANNEL_ALERTS=
+DISCORD_CHANNEL_THOUGHTS=
+DISCORD_CHANNEL_GENERAL=
 
 # Webhook URLs (create webhook in each channel: Edit Channel → Integrations → Webhooks)
 # Agent chat webhook - for agent reasoning and status updates
@@ -132,6 +134,13 @@ PERSONALITY_DIR=config/personalities
 
 # Enable personality evolution based on experiences
 PERSONALITY_EVOLUTION_ENABLED=true
+
+# =============================================================================
+# CASUAL CHAT (GENERAL CHANNEL)
+# =============================================================================
+# Enable casual chat in #am-corp-general channel
+# Agents will periodically chat about security topics based on their personality
+CASUAL_CHAT_ENABLED=true
 
 # =============================================================================
 # DOCKER CONFIGURATION (used by docker-compose)

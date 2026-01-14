@@ -1,7 +1,7 @@
 # Phase 5: Autonomous Agent Features
 
 **Duration:** 2 weeks  
-**Status:** Planned  
+**Status:** In Progress  
 **Dependencies:** Phase 1-4 complete
 
 ---
@@ -26,38 +26,84 @@ Phase 5 transforms agents from command-driven tools into autonomous team members
 
 ### Week 1: Thoughts Channel & Personality
 
-#### 5.1 Thoughts Channel Implementation
-- [ ] Create `#am-corp-thoughts` channel integration
-- [ ] Add thoughts output method to base agent class
-- [ ] Implement verbosity levels (minimal, normal, verbose, all)
-- [ ] Format thoughts with "(thinking)" prefix
-- [ ] Add confidence levels to thought output
-- [ ] Test thoughts visibility during active scans
+#### 5.1 Thoughts Channel Implementation ✅
+- [x] Create `#am-corp-thoughts` channel integration
+- [x] Add thoughts output method to base agent class
+- [x] Implement verbosity levels (minimal, normal, verbose, all)
+- [x] Format thoughts with "(thinking)" prefix
+- [x] Add confidence levels to thought output
+- [x] Test thoughts visibility during active scans
 
-#### 5.2 Personality System
-- [ ] Design personality YAML schema
-- [ ] Create personality file for each agent
-- [ ] Implement personality loading on startup
-- [ ] Add personality persistence across restarts
-- [ ] Create base personality templates
-- [ ] Implement personality reset functionality
+#### 5.2 Personality System ✅
+- [x] Design personality YAML schema
+- [x] Create personality file for each agent
+- [x] Implement personality loading on startup
+- [x] Add personality persistence across restarts
+- [x] Create base personality templates
+- [x] Implement personality reset functionality
 
-#### 5.3 Personality Evolution
-- [ ] Define evolution triggers (experiences, interactions)
-- [ ] Implement trait modification logic
-- [ ] Add evolution logging for transparency
-- [ ] Create personality diff tracking
-- [ ] Build archive system for "fired" agents
+#### 5.3 Personality Evolution ✅
+- [x] Define evolution triggers (experiences, interactions)
+- [x] Implement trait modification logic
+- [x] Add evolution logging for transparency
+- [x] Create personality diff tracking
+- [x] Build archive system for "fired" agents
 
 ### Week 2: Autonomy & Casual Chat
 
-#### 5.4 General Channel & Casual Chat
-- [ ] Create `#am-corp-general` channel integration
-- [ ] Implement personality-driven chat frequency
-- [ ] Add configurable work hours per agent
-- [ ] Build message relevance filtering (not everyone responds)
-- [ ] Integrate security news feeds (optional)
-- [ ] Test natural conversation flow
+#### 5.4 General Channel & Casual Chat (Partial ✅)
+- [x] Create `#am-corp-general` channel integration
+- [x] Implement personality-driven chat frequency
+- [x] Add configurable work hours per agent
+- [x] Build message relevance filtering (not everyone responds)
+- [ ] Remove emoji prefix from casual messages (work emoji only for tasks)
+- [ ] Integrate security news feeds (**Required** - see 5.4.1)
+- [ ] Test natural conversation flow with real content
+
+#### 5.4.1 Security News Feeds (NEW)
+Agents need real security content to discuss, not generated catchphrases.
+
+**Problem:** Current casual chat generates empty, personality-only messages.
+**Solution:** Integrate security news feeds so agents discuss real topics.
+
+**News Sources to Integrate:**
+| Source | Type | Method | Agent Relevance |
+|--------|------|--------|-----------------|
+| Hacker News | Tech/Security News | API (free) | All agents |
+| NVD CVE Feed | Vulnerabilities | JSON Feed | Victor, Ivy |
+| CISA Advisories | Alerts | RSS | Victor, Ivy |
+| The Hacker News | Security Blog | RSS | All agents |
+| Krebs on Security | Blog | RSS | Ivy |
+| Bleeping Computer | News | RSS | All agents |
+
+**Architecture:**
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│  News Fetcher   │────▶│  Topic Cache     │────▶│  Chat Generator │
+│  (background)   │     │  (24-48 hours)   │     │  (personality)  │
+└─────────────────┘     └──────────────────┘     └─────────────────┘
+```
+
+**Implementation Tasks:**
+- [ ] Create `src/feeds/security_news.py` - RSS/API fetcher
+- [ ] Create `src/feeds/news_cache.py` - Cache management
+- [ ] Add `data/news_cache.json` for persistence
+- [ ] Update `casual_chat.py` to use cached articles
+- [ ] Remove emoji prefix from casual posts
+- [ ] Add preflight check for feed connectivity
+- [ ] Match articles to agent topics of interest
+- [ ] Generate personality-driven commentary on real news
+
+**Example Output (Target):**
+```
+Victor Vuln: That new Chrome V8 zero-day is wild. Exploited in the wild 
+             for 2 weeks before disclosure. Browser security is a 
+             constant arms race fr.
+
+Ivy Intel:   Interesting timing on that ransomware group going dark. 
+             Two days after the FBI press conference. Coincidence? 
+             I think not.
+```
 
 #### 5.5 Agent Initiative
 - [ ] Implement initiative proposal system

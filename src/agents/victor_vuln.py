@@ -74,6 +74,11 @@ def _random_fallback(pool: list[str], **kwargs) -> str:
 
 from src.agents import AGENT_VICTOR_VULN, AGENTS
 from src.agents.personality import get_personality_manager
+from src.agents.evolution import (
+    trigger_scan_completed,
+    trigger_finding_discovered,
+    trigger_pattern_observed,
+)
 from src.discord_bot.agent_bots import get_agent_manager, get_rita_mention, get_ivy_mention
 from src.discord_bot.thoughts import post_thought, post_finding
 from src.tools.vuln_tools import (
@@ -475,6 +480,44 @@ class VictorVuln:
             critical=result.critical_count,
             high=result.high_count,
         )
+        
+        # Trigger personality evolution based on findings
+        evolution_context = {}
+        
+        # Check for patterns that trigger specific evolution
+        if result.critical_count > 0 or result.high_count > 0:
+            evolution_context["critical_vuln_found"] = True
+        
+        # Check for web-related vulns
+        web_vulns = [v for v in result.all_findings if any(
+            kw in str(v.get("template_id", "")).lower()
+            for kw in ["http", "web", "xss", "sqli", "cors"]
+        )]
+        if web_vulns:
+            evolution_context["web_vuln_found"] = True
+        
+        # Check for CVE correlations
+        cve_vulns = [v for v in result.all_findings if v.get("cve")]
+        if cve_vulns:
+            evolution_context["cve_correlated"] = True
+        
+        await trigger_scan_completed(
+            agent_id=self.agent_id,
+            target=target,
+            success=True,
+            findings_count=len(result.all_findings),
+            context=evolution_context,
+        )
+        
+        # Trigger finding discovery for significant vulns
+        for vuln in result.all_findings:
+            if vuln.get("severity") in ("critical", "high"):
+                await trigger_finding_discovered(
+                    agent_id=self.agent_id,
+                    finding_type=vuln.get("template_id", "vulnerability"),
+                    severity=vuln.get("severity"),
+                    details=vuln.get("name", ""),
+                )
         
         return result
     

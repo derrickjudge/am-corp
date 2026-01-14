@@ -92,6 +92,11 @@ def _random_fallback(pool: list[str], **kwargs) -> str:
 
 from src.agents import AGENT_IVY_INTEL, AGENTS
 from src.agents.personality import get_personality_manager
+from src.agents.evolution import (
+    trigger_scan_completed,
+    trigger_finding_discovered,
+    trigger_pattern_observed,
+)
 from src.discord_bot.agent_bots import get_agent_manager, get_victor_mention, get_rita_mention
 from src.discord_bot.thoughts import post_thought, post_finding
 from src.tools.intel_tools import (
@@ -425,6 +430,47 @@ class IvyIntelAgent:
             result="success",
             cves_enriched=len(result.cve_enrichments),
         )
+        
+        # Trigger personality evolution based on intel findings
+        evolution_context = {}
+        
+        # Check for patterns that trigger Ivy's specific evolution
+        if result.cve_enrichments:
+            # Look for high-EPSS CVEs (actively exploited)
+            high_epss = [c for c in result.cve_enrichments if c.get("epss", 0) > 0.5]
+            if high_epss:
+                evolution_context["apt_connection_found"] = True
+        
+        if result.shodan_result and result.shodan_result.vulns:
+            evolution_context["historical_breach"] = True  # Exposure suggests risk
+        
+        if result.virustotal_result:
+            if result.virustotal_result.malicious_count > 0:
+                evolution_context["threat_confirmed"] = True
+        
+        findings_count = (
+            len(result.cve_enrichments) +
+            (1 if result.shodan_result else 0) +
+            (1 if result.virustotal_result else 0)
+        )
+        
+        await trigger_scan_completed(
+            agent_id=self.agent_id,
+            target=target,
+            success=True,
+            findings_count=findings_count,
+            context=evolution_context,
+        )
+        
+        # Trigger pattern observations for notable intel
+        if result.cve_enrichments:
+            for cve in result.cve_enrichments[:3]:  # Limit to avoid spam
+                if cve.get("epss", 0) > 0.3:
+                    await trigger_pattern_observed(
+                        agent_id=self.agent_id,
+                        pattern=f"High exploitation probability for {cve.get('cve_id')}",
+                        significance="high",
+                    )
         
         return result
     

@@ -180,6 +180,15 @@ Use `./scripts/restart.sh` for safe restarts:
 - Chat frequency driven by personality (a few messages per hour during work hours).
 - Not every agent responds to every message—relevant agent(s) respond.
 - Real-world security awareness (news feeds, CVE updates) drives conversation.
+- **No emoji prefix** in casual chat - emoji (🔍, ⚠️, 🧠, 📊) is for work messages only.
+- Casual messages must be about **real content** (news, CVEs, articles), not empty catchphrases.
+
+#### Security News Feeds
+- Agents discuss real security news, not generated filler content.
+- News is fetched from RSS/API sources and cached locally.
+- Articles are matched to agent topics of interest.
+- Agents generate personality-driven commentary on real news.
+- Sources: Hacker News, NVD CVE Feed, CISA, The Hacker News, Krebs, Bleeping Computer.
 
 ### Discord Integration
 

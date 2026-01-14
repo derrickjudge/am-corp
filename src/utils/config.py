@@ -129,6 +129,13 @@ class Settings(BaseSettings):
     )
 
     # =========================================================================
+    # Casual Chat (General Channel)
+    # =========================================================================
+    casual_chat_enabled: bool = Field(
+        default=True, description="Enable casual chat in general channel"
+    )
+
+    # =========================================================================
     # Security Settings
     # =========================================================================
     enable_scope_verification: bool = Field(

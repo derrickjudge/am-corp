@@ -353,10 +353,12 @@ class PreflightChecker:
             "results": os.getenv("DISCORD_WEBHOOK_RESULTS", ""),
             "alerts": os.getenv("DISCORD_WEBHOOK_ALERTS", ""),
             "thoughts": os.getenv("DISCORD_WEBHOOK_THOUGHTS", ""),
+            "general": os.getenv("DISCORD_WEBHOOK_GENERAL", ""),
         }
         
         configured = [k for k, v in webhooks.items() if v]
         missing = [k for k, v in webhooks.items() if not v]
+        total = len(webhooks)
         
         if not configured:
             self._add_result(
@@ -369,7 +371,7 @@ class PreflightChecker:
             self._add_result(
                 "config.webhooks",
                 CheckStatus.PASS,
-                f"{len(configured)}/4 webhooks configured",
+                f"{len(configured)}/{total} webhooks configured",
                 {"configured": configured, "missing": missing},
             )
         else:
@@ -378,6 +380,42 @@ class PreflightChecker:
                 CheckStatus.PASS,
                 "All webhooks configured",
                 {"configured": configured},
+            )
+
+    def check_env_casual_chat(self) -> None:
+        """Check casual chat configuration for general channel."""
+        general_channel = os.getenv("DISCORD_CHANNEL_GENERAL", "")
+        general_webhook = os.getenv("DISCORD_WEBHOOK_GENERAL", "")
+        casual_enabled = os.getenv("CASUAL_CHAT_ENABLED", "true").lower() == "true"
+        
+        if casual_enabled:
+            if not general_channel and not general_webhook:
+                self._add_result(
+                    "config.casual_chat",
+                    CheckStatus.WARN,
+                    "Casual chat enabled but no general channel/webhook configured",
+                    {"enabled": True, "channel": False, "webhook": False},
+                )
+            elif not general_webhook:
+                self._add_result(
+                    "config.casual_chat",
+                    CheckStatus.WARN,
+                    "Casual chat enabled but no general webhook (agents can't post)",
+                    {"enabled": True, "channel": bool(general_channel), "webhook": False},
+                )
+            else:
+                self._add_result(
+                    "config.casual_chat",
+                    CheckStatus.PASS,
+                    "Casual chat configured",
+                    {"enabled": True, "channel": bool(general_channel), "webhook": True},
+                )
+        else:
+            self._add_result(
+                "config.casual_chat",
+                CheckStatus.PASS,
+                "Casual chat disabled",
+                {"enabled": False},
             )
 
     # =========================================================================
@@ -631,6 +669,7 @@ class PreflightChecker:
         self.check_env_discord()
         self.check_env_gemini()
         self.check_env_webhooks()
+        self.check_env_casual_chat()
         
         # Connectivity checks (async)
         await self.check_connectivity_discord()

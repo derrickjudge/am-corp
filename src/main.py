@@ -112,11 +112,25 @@ async def main() -> None:
     # Import bot components
     from src.discord_bot.agent_bots import get_agent_manager
     from src.discord_bot.bot import create_bot
+    from src.discord_bot.casual_chat import get_casual_chat_manager, start_casual_chat
     from src.discord_bot.commands import setup_commands
 
     # Start agent bots first
     agent_manager = get_agent_manager()
     await agent_manager.start_all()
+
+    # Start casual chat background task if enabled
+    casual_chat_task = None
+    casual_manager = get_casual_chat_manager()
+    if casual_manager.enabled and settings.discord_webhook_general:
+        logger.info("Starting casual chat background task...")
+        casual_chat_task = await start_casual_chat()
+    else:
+        logger.info(
+            "Casual chat disabled or not configured",
+            enabled=casual_manager.enabled,
+            webhook_configured=bool(settings.discord_webhook_general),
+        )
 
     # Create and start main command bot
     main_bot = None
@@ -132,6 +146,12 @@ async def main() -> None:
             logger.info("Shutdown requested")
         finally:
             # Clean up
+            if casual_chat_task:
+                casual_chat_task.cancel()
+                try:
+                    await casual_chat_task
+                except asyncio.CancelledError:
+                    pass
             if agent_manager:
                 await agent_manager.stop_all()
             if main_bot and not main_bot.is_closed():
@@ -144,6 +164,12 @@ async def main() -> None:
         except KeyboardInterrupt:
             logger.info("Shutdown requested")
         finally:
+            if casual_chat_task:
+                casual_chat_task.cancel()
+                try:
+                    await casual_chat_task
+                except asyncio.CancelledError:
+                    pass
             if agent_manager:
                 await agent_manager.stop_all()
 
