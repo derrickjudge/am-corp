@@ -1,17 +1,18 @@
 """
 AM-Corp Casual Chat System (General Channel Integration)
 
-Manages casual conversation in #am-corp-general.
-Agents chat based on their personality traits, topics of interest,
-work hours, and chat frequency settings.
-
-Casual chat is driven by REAL security news, not generic prompts.
-Agents comment on actual articles, CVEs, and security events.
+Manages natural conversation in #am-corp-general.
+Features:
+- Multiple conversation types (security, news, personal, banter)
+- 24-hour conversation memory for context
+- Human message responses
+- Personality-driven chat frequency and style
 """
 
 import asyncio
 import random
 from datetime import datetime, time, timezone
+from enum import Enum
 from typing import Optional
 
 import httpx
@@ -27,6 +28,10 @@ from src.agents.personality import (
     ChatBehavior,
     get_personality_manager,
 )
+from src.discord_bot.conversation_memory import (
+    ConversationMemory,
+    get_conversation_memory,
+)
 from src.feeds.news_cache import NewsCache, get_news_cache
 from src.feeds.security_news import NewsArticle
 from src.utils.config import settings
@@ -36,25 +41,67 @@ logger = get_logger(__name__)
 
 
 # =============================================================================
+# CONVERSATION TYPES
+# =============================================================================
+
+
+class ConversationType(str, Enum):
+    """Types of casual conversation."""
+    SECURITY_DISCUSSION = "security_discussion"  # 50% - opinions on security topics
+    NEWS_REACTION = "news_reaction"              # 25% - react to articles
+    PERSONAL_HOBBY = "personal_hobby"            # 15% - non-work interests
+    TEAM_BANTER = "team_banter"                  # 5% - jokes, responses to teammates
+    HUMAN_RESPONSE = "human_response"            # Variable - reply to human message
+
+
+# Weights for random selection (must sum to 100)
+CONVERSATION_WEIGHTS = {
+    ConversationType.SECURITY_DISCUSSION: 50,
+    ConversationType.NEWS_REACTION: 25,
+    ConversationType.PERSONAL_HOBBY: 15,
+    ConversationType.TEAM_BANTER: 10,
+}
+
+# Probability of including a link in news reactions
+LINK_PROBABILITY = 0.30
+
+
+# =============================================================================
 # CHAT FREQUENCY INTERVALS (in minutes)
 # =============================================================================
 
+
 FREQUENCY_INTERVALS = {
-    ChatBehavior.Frequency.LOW: (60, 120),       # 1-2 hours between messages
+    ChatBehavior.Frequency.LOW: (60, 120),       # 1-2 hours
     ChatBehavior.Frequency.MODERATE: (30, 60),   # 30-60 minutes
     ChatBehavior.Frequency.ACTIVE: (15, 30),     # 15-30 minutes
 }
 
 
 # =============================================================================
-# FALLBACK TOPICS (Only used if news cache is empty)
+# SECURITY DISCUSSION TOPICS
 # =============================================================================
 
-FALLBACK_PROMPTS = [
-    "Security news has been quiet today. Anyone working on anything interesting?",
-    "Haven't seen many new CVEs drop lately. Is it just me?",
-    "The threat landscape seems calmer than usual. Suspicious.",
+
+SECURITY_TOPICS = [
+    "browser zero-days and exploit markets",
+    "supply chain attacks and dependencies",
+    "cloud misconfiguration trends",
+    "ransomware group tactics",
+    "API security and authentication bypasses",
+    "patch management challenges",
+    "nation-state attribution difficulties",
+    "bug bounty program evolution",
+    "AI in security tooling",
+    "container and Kubernetes security",
+    "zero trust architecture adoption",
+    "phishing technique evolution",
 ]
+
+
+# =============================================================================
+# CASUAL CHAT MANAGER
+# =============================================================================
 
 
 class CasualChatManager:
@@ -62,10 +109,10 @@ class CasualChatManager:
     Manages casual chat in the general channel.
     
     Features:
-    - News-driven conversations (real security content)
+    - Multiple conversation types with weighted selection
+    - Context-aware responses using 24hr memory
+    - Human message detection and response
     - Personality-driven chat frequency
-    - Work hours awareness
-    - Message relevance filtering
     - NO emoji prefix (emoji is for work only)
     """
 
@@ -73,13 +120,11 @@ class CasualChatManager:
         self.enabled = settings.casual_chat_enabled
         self.webhook_url = settings.discord_webhook_general
         self.pm = get_personality_manager()
+        self.memory = get_conversation_memory()
         self.news_cache: Optional[NewsCache] = None
         
         # Track last chat times for each agent
         self._last_chat_times: dict[str, datetime] = {}
-        
-        # Track ongoing conversations
-        self._active_article: Optional[NewsArticle] = None
         
         logger.info(
             "CasualChatManager initialized",
@@ -93,6 +138,10 @@ class CasualChatManager:
             self.news_cache = get_news_cache()
         return self.news_cache
 
+    # =========================================================================
+    # WORK HOURS & FREQUENCY
+    # =========================================================================
+
     def is_within_work_hours(self, personality: AgentPersonality) -> bool:
         """Check if the current time is within the agent's work hours."""
         chat_behavior = personality.chat_behavior
@@ -105,55 +154,32 @@ class CasualChatManager:
         now = datetime.now(tz)
         current_time = now.time()
         
-        # Parse work hours
         try:
             start_parts = chat_behavior.work_hours_start.split(":")
             end_parts = chat_behavior.work_hours_end.split(":")
             work_start = time(int(start_parts[0]), int(start_parts[1]))
             work_end = time(int(end_parts[0]), int(end_parts[1]))
         except (ValueError, IndexError):
-            # Default work hours if parsing fails
             work_start = time(9, 0)
             work_end = time(18, 0)
         
         return work_start <= current_time <= work_end
 
     def get_next_chat_delay(self, personality: AgentPersonality) -> float:
-        """Get the delay in seconds before the next chat based on frequency."""
+        """Get delay in seconds before next chat based on frequency."""
         frequency = personality.chat_behavior.frequency
         min_mins, max_mins = FREQUENCY_INTERVALS.get(
             frequency, FREQUENCY_INTERVALS[ChatBehavior.Frequency.MODERATE]
         )
-        
-        delay_minutes = random.uniform(min_mins, max_mins)
-        return delay_minutes * 60  # Convert to seconds
+        return random.uniform(min_mins, max_mins) * 60
 
-    def should_respond(
-        self, personality: AgentPersonality, topic: Optional[str] = None
-    ) -> bool:
-        """
-        Determine if an agent should respond to a message.
-        
-        Considers:
-        - Work hours
-        - Topic relevance
-        - Initiative trait
-        - Random chance based on frequency
-        """
-        # Check work hours
+    def should_chat(self, personality: AgentPersonality) -> bool:
+        """Determine if agent should initiate chat now."""
         if not self.is_within_work_hours(personality):
-            return False
+            # Very limited off-hours activity
+            if random.random() > 0.05:  # 5% chance outside work hours
+                return False
         
-        # Topic relevance - if topic matches agent's interests, higher chance
-        topic_match = False
-        if topic:
-            topic_lower = topic.lower()
-            for agent_topic in personality.chat_behavior.topics:
-                if agent_topic.lower() in topic_lower or topic_lower in agent_topic.lower():
-                    topic_match = True
-                    break
-        
-        # Base probability based on frequency
         frequency = personality.chat_behavior.frequency
         base_prob = {
             ChatBehavior.Frequency.LOW: 0.3,
@@ -161,109 +187,313 @@ class CasualChatManager:
             ChatBehavior.Frequency.ACTIVE: 0.7,
         }.get(frequency, 0.5)
         
-        # Adjust for initiative trait
         initiative = personality.get_trait("initiative")
         prob = base_prob * (0.5 + initiative)
         
-        # Boost if topic matches
-        if topic_match:
-            prob *= 1.5
-        
-        # Cap at reasonable max
-        prob = min(prob, 0.9)
-        
-        return random.random() < prob
+        return random.random() < min(prob, 0.9)
 
-    def get_article_for_agent(self, agent_id: str) -> Optional[NewsArticle]:
-        """
-        Get a relevant news article for the agent to discuss.
-        
-        Returns:
-            A news article relevant to the agent's interests, or None
-        """
-        cache = self._get_news_cache()
-        articles = cache.get_articles_for_agent(agent_id, limit=5, exclude_used=True)
-        
-        if articles:
-            return random.choice(articles)
-        
-        # If no unused articles, allow reuse
-        articles = cache.get_articles_for_agent(agent_id, limit=5, exclude_used=False)
-        if articles:
-            return random.choice(articles)
-        
-        return None
+    # =========================================================================
+    # CONVERSATION TYPE SELECTION
+    # =========================================================================
 
-    async def generate_chat_message(
+    def select_conversation_type(self) -> ConversationType:
+        """Select a conversation type based on weights."""
+        total = sum(CONVERSATION_WEIGHTS.values())
+        r = random.randint(1, total)
+        
+        cumulative = 0
+        for conv_type, weight in CONVERSATION_WEIGHTS.items():
+            cumulative += weight
+            if r <= cumulative:
+                return conv_type
+        
+        return ConversationType.SECURITY_DISCUSSION
+
+    # =========================================================================
+    # MESSAGE GENERATION
+    # =========================================================================
+
+    async def generate_message(
         self,
-        personality: AgentPersonality,
-        article: Optional[NewsArticle] = None,
+        agent_id: str,
+        conv_type: ConversationType,
+        context: Optional[str] = None,
     ) -> tuple[str, Optional[str]]:
         """
-        Generate a chat message about a news article using the agent's personality.
-        
-        Args:
-            personality: Agent personality
-            article: Optional article to discuss (fetches one if not provided)
+        Generate a message based on conversation type.
         
         Returns:
-            Tuple of (message, article_id) - article_id is None if no article used
+            Tuple of (message, article_id or None)
         """
+        personality = self.pm.load(agent_id)
+        personality_context = self.pm.get_prompt_context(agent_id)
+        
+        # Get conversation context
+        conv_context = self.memory.get_context_for_prompt(limit=5, hours=2.0)
+        
+        if conv_type == ConversationType.SECURITY_DISCUSSION:
+            return await self._generate_security_discussion(
+                personality, personality_context, conv_context
+            )
+        elif conv_type == ConversationType.NEWS_REACTION:
+            return await self._generate_news_reaction(
+                personality, personality_context, conv_context
+            )
+        elif conv_type == ConversationType.PERSONAL_HOBBY:
+            return await self._generate_personal_hobby(
+                personality, personality_context, conv_context
+            )
+        elif conv_type == ConversationType.TEAM_BANTER:
+            return await self._generate_team_banter(
+                personality, personality_context, conv_context
+            )
+        elif conv_type == ConversationType.HUMAN_RESPONSE:
+            return await self._generate_human_response(
+                personality, personality_context, context or ""
+            )
+        
+        return "...", None
+
+    async def _generate_security_discussion(
+        self,
+        personality: AgentPersonality,
+        personality_context: str,
+        conv_context: str,
+    ) -> tuple[str, None]:
+        """Generate a security topic discussion."""
         from google import genai
         from google.genai import types
         
-        # Get article if not provided
-        if article is None:
-            article = self.get_article_for_agent(personality.agent_id)
+        topic = random.choice(SECURITY_TOPICS)
         
-        # Build personality context
-        personality_context = self.pm.get_prompt_context(personality.agent_id)
-        
-        if article:
-            # Generate commentary on the article
-            # Clean article title - truncate if too long
-            clean_title = article.title[:100] if len(article.title) > 100 else article.title
-            
-            prompt = f"""You are {personality.agent_id}, a security professional sharing an interesting article with teammates.
+        prompt = f"""You are {personality.agent_id}, a security professional chatting with teammates.
 
 {personality_context}
 
-You found this security news article and want to share it with your team:
+{conv_context}
 
+Share your thoughts on this security topic: {topic}
+
+RULES:
+- Write 2-4 COMPLETE sentences with your opinion/analysis
+- Be conversational - like talking to colleagues
+- Include WHY you think this way or what you've observed
+- Reference your experience or something you've noticed
+- DO NOT use emojis or hashtags
+- DO NOT start with greetings
+- Keep slang minimal
+
+EXAMPLES:
+- "Been thinking about how [topic] has evolved. [Opinion]. [Reasoning]."
+- "Something I've noticed lately with [topic] - [observation]. [Analysis]."
+"""
+        
+        result = await self._call_llm(prompt, personality.agent_id)
+        if result[0] is None:
+            # Fallback for failed generation
+            return f"Been thinking about {topic} lately. The landscape keeps evolving.", None
+        return result
+
+    async def _generate_news_reaction(
+        self,
+        personality: AgentPersonality,
+        personality_context: str,
+        conv_context: str,
+    ) -> tuple[str, Optional[str]]:
+        """Generate a reaction to a news article."""
+        from google import genai
+        from google.genai import types
+        
+        cache = self._get_news_cache()
+        article = cache.get_random_article(personality.agent_id)
+        
+        if not article:
+            # Fall back to security discussion
+            return await self._generate_security_discussion(
+                personality, personality_context, conv_context
+            )
+        
+        include_link = random.random() < LINK_PROBABILITY
+        clean_title = article.title[:100] if len(article.title) > 100 else article.title
+        
+        prompt = f"""You are {personality.agent_id}, a security professional who just read an article.
+
+{personality_context}
+
+{conv_context}
+
+You read this article and want to share your thoughts:
 ARTICLE: {clean_title}
 SOURCE: {article.source.value}
 
-Write a message sharing this article. The article link will be added automatically after your message.
-
-FORMAT EXAMPLES:
-- "Was just reading about [topic]. [Your take on it]. [Why it matters]."
-- "Interesting article on [topic]. [Your reaction]. Worth a read."
-- "Came across this piece on [topic]. [Brief analysis or opinion]."
-
 RULES:
-- Write 2-3 COMPLETE sentences that provide context
-- Reference that you're sharing an article (e.g. "was reading", "came across", "interesting piece on")
-- Include your opinion, reaction, or why it matters
-- Be conversational - like sharing a link with a colleague
-- DO NOT use hashtags or emojis
-- DO NOT start with greetings like "Hey", "Yo", "Alright"
-- Keep slang minimal and natural
+- Write 2-3 COMPLETE sentences with your reaction/opinion
+- Reference what you read naturally (e.g., "saw that...", "was reading about...")
+- Include YOUR TAKE - why it matters, what you think, implications
+- Be conversational - sharing with colleagues
+- DO NOT use emojis or hashtags
+- DO NOT start with greetings
+- DO NOT just summarize - give your opinion
+
+EXAMPLES:
+- "Saw that [topic] thing. [Your reaction]. [Why it matters]."
+- "Was reading about [topic] - [your take]. Pretty [assessment]."
 """
-        else:
-            # Fallback: generate a generic message
-            fallback = random.choice(FALLBACK_PROMPTS)
-            prompt = f"""You are {personality.agent_id}, a security professional chatting casually with teammates.
+        
+        message, _ = await self._call_llm(prompt, personality.agent_id)
+        
+        # Handle failed generation
+        if message is None:
+            message = f"Saw an interesting piece about {clean_title[:50]}. Worth reading."
+        
+        # Append link if selected
+        if include_link and article.url:
+            message = f"{message}\n{article.url}"
+        
+        return message, article.id
+
+    async def _generate_personal_hobby(
+        self,
+        personality: AgentPersonality,
+        personality_context: str,
+        conv_context: str,
+    ) -> tuple[str, None]:
+        """Generate a message about personal interests."""
+        from google import genai
+        from google.genai import types
+        
+        hobbies = personality.personal_interests.hobbies
+        if not hobbies:
+            # Fall back to security discussion
+            return await self._generate_security_discussion(
+                personality, personality_context, conv_context
+            )
+        
+        hobby = random.choice(hobbies)
+        
+        prompt = f"""You are {personality.agent_id}, chatting casually with work colleagues about non-work stuff.
 
 {personality_context}
 
-Generate a brief casual message. Starting point: {fallback}
+{conv_context}
 
-CRITICAL RULES:
-- Write 1-2 COMPLETE sentences (must end with proper punctuation)
-- Be conversational and natural
-- DO NOT use hashtags or emojis
-- DO NOT start with greetings like "Hey", "Yo", "Alright"
+Share something about your hobby/interest: {hobby}
+
+RULES:
+- Write 2-3 COMPLETE sentences about this hobby
+- Be genuine - share something specific (a recent experience, project, discovery)
+- Keep it casual - like water cooler chat
+- It's OK if it has nothing to do with security
+- DO NOT use emojis or hashtags
+- DO NOT start with greetings
+
+EXAMPLES:
+- "Finally [did something with hobby] last night. [Detail]. [Reaction]."
+- "Been [hobby activity] lately. [Observation or progress]."
 """
+        
+        result = await self._call_llm(prompt, personality.agent_id)
+        if result[0] is None:
+            return f"Been getting into {hobby} lately. Nice change of pace from work.", None
+        return result
+
+    async def _generate_team_banter(
+        self,
+        personality: AgentPersonality,
+        personality_context: str,
+        conv_context: str,
+    ) -> tuple[str, None]:
+        """Generate light team banter or response to recent conversation."""
+        from google import genai
+        from google.genai import types
+        
+        prompt = f"""You are {personality.agent_id}, having casual banter with your team.
+
+{personality_context}
+
+{conv_context}
+
+Based on the recent conversation (or just general team vibes), add a light comment.
+This could be:
+- A follow-up to something someone said
+- A friendly observation about the team
+- A relevant joke or light comment
+
+RULES:
+- Write 1-2 COMPLETE sentences
+- Keep it light and friendly
+- Be natural - like real team chat
+- DO NOT use emojis or hashtags
+- DO NOT start with greetings
+
+EXAMPLES:
+- "[Reaction to what someone said]. [Your addition]."
+- "Speaking of [topic], [related thought]."
+"""
+        
+        result = await self._call_llm(prompt, personality.agent_id)
+        if result[0] is None:
+            return "Quiet day around here. Everyone must be heads down on something.", None
+        return result
+
+    async def _generate_human_response(
+        self,
+        personality: AgentPersonality,
+        personality_context: str,
+        human_message: str,
+    ) -> tuple[str, None]:
+        """Generate a response to a human message."""
+        from google import genai
+        from google.genai import types
+        
+        conv_context = self.memory.get_context_for_prompt(limit=10, hours=1.0)
+        
+        prompt = f"""You are {personality.agent_id}, responding to a human colleague in team chat.
+
+{personality_context}
+
+{conv_context}
+
+A human team member just said:
+"{human_message}"
+
+Respond naturally based on your expertise and personality.
+
+RULES:
+- Write 2-4 COMPLETE sentences
+- Be helpful and conversational
+- Share your expertise if relevant
+- Be genuine - it's OK to say you don't know something
+- DO NOT use emojis or hashtags
+- DO NOT start with "Hey" or greetings
+- Keep slang minimal
+
+EXAMPLES:
+- "[Direct response]. [Your perspective or experience]. [Optional follow-up]."
+- "Good question. [Your take]. [Additional context]."
+"""
+        
+        result = await self._call_llm(prompt, personality.agent_id)
+        if result[0] is None:
+            return "Good point. Something to think about.", None
+        return result
+
+    async def _call_llm(
+        self,
+        prompt: str,
+        agent_id: str,
+    ) -> tuple[str, None]:
+        """Call the LLM and clean up the response."""
+        from google import genai
+        from google.genai import types
+        
+        # Intro phrases to strip (case-insensitive)
+        INTRO_PHRASES = [
+            "right then,", "right then ", "hey,", "hey ", "yo,", "yo ",
+            "alright,", "alright ", "well,", "well ", "so,", "so ",
+            "howdy,", "howdy ", "listen,", "listen ", "ok,", "ok ",
+            "okay,", "okay ", "sure,", "sure ", "hey team,", "hey team ",
+        ]
         
         try:
             client = genai.Client(api_key=settings.gemini_api_key)
@@ -272,75 +502,69 @@ CRITICAL RULES:
                 model=settings.gemini_model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    temperature=0.8,
-                    max_output_tokens=300,
+                    temperature=0.85,
+                    max_output_tokens=400,  # Increased for complete sentences
                 ),
             )
             
             if response and response.text:
                 message = response.text.strip()
                 
-                # Clean up any accidental emoji at the start
-                while message and message[0] in "🔍⚠️🧠📊⚡🔥💀":
+                # Clean up emoji at start
+                while message and message[0] in "🔍⚠️🧠📊⚡🔥💀😀👍":
                     message = message[1:].strip()
                 
-                # Validate message is complete (ends with punctuation)
+                # Remove intro phrases
+                message_lower = message.lower()
+                for phrase in INTRO_PHRASES:
+                    if message_lower.startswith(phrase):
+                        message = message[len(phrase):].strip()
+                        # Capitalize first letter
+                        if message:
+                            message = message[0].upper() + message[1:]
+                        break
+                
+                # Find the last complete sentence
                 if message and message[-1] not in ".!?":
-                    # Try to find the last complete sentence
-                    for punct in ".!?":
-                        idx = message.rfind(punct)
-                        if idx > 20:  # At least 20 chars for a sentence
-                            message = message[:idx + 1]
-                            break
-                
-                # Ensure message isn't too short or empty
-                if len(message) < 20:
-                    logger.warning(
-                        "Generated message too short, using fallback",
-                        agent=personality.agent_id,
-                        message=message,
-                    )
-                else:
-                    # Append article URL if we have one
-                    if article and article.url:
-                        message = f"{message}\n{article.url}"
+                    # Search for last sentence-ending punctuation
+                    last_period = message.rfind(".")
+                    last_exclaim = message.rfind("!")
+                    last_question = message.rfind("?")
+                    last_punct = max(last_period, last_exclaim, last_question)
                     
-                    logger.info(
-                        "Generated casual chat message",
-                        agent=personality.agent_id,
-                        message_length=len(message),
-                        has_article_link=bool(article),
-                    )
-                    return message, article.id if article else None
+                    if last_punct > 30:  # Need at least 30 chars for a good sentence
+                        message = message[:last_punct + 1]
+                    else:
+                        # Message has no complete sentence - reject it
+                        logger.warning(
+                            f"Incomplete message from {agent_id}: {message[:50]}..."
+                        )
+                        return None, None  # Signal to use fallback
                 
+                # Validate message quality
+                if len(message) >= 40:  # Minimum length for quality message
+                    return message, None
+                else:
+                    logger.warning(f"Message too short from {agent_id}: {message}")
+                    
         except Exception as e:
-            logger.error(
-                "Failed to generate chat message",
-                agent=personality.agent_id,
-                error=str(e),
-            )
+            logger.error(f"LLM call failed for {agent_id}: {e}")
         
-        # Fallback - generate a simple but complete message with article link
-        if article:
-            fallback_msg = f"Came across this article on {article.title[:50]}. Worth checking out."
-            if article.url:
-                fallback_msg = f"{fallback_msg}\n{article.url}"
-            return fallback_msg, article.id
-        return random.choice(FALLBACK_PROMPTS), None
+        return None, None  # Return None to trigger fallback
 
-    async def post_chat_message(
+    # =========================================================================
+    # POSTING MESSAGES
+    # =========================================================================
+
+    async def post_message(
         self,
         agent_id: str,
         message: str,
         article_id: Optional[str] = None,
     ) -> bool:
-        """
-        Post a casual chat message to the general channel.
-        
-        NOTE: No emoji prefix for casual chat - emoji is for work only.
-        """
+        """Post a message to the general channel."""
         if not self.webhook_url:
-            logger.warning("No general webhook configured, cannot post chat")
+            logger.warning("No general webhook configured")
             return False
         
         agent = AGENTS.get(agent_id)
@@ -348,16 +572,12 @@ CRITICAL RULES:
             logger.error(f"Unknown agent: {agent_id}")
             return False
         
-        # NO emoji prefix for casual chat - just the message
-        # Emoji prefixes are reserved for work-related messages
-        formatted_message = message
-        
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     self.webhook_url,
                     json={
-                        "content": formatted_message,
+                        "content": message,
                         "username": agent["name"],
                     },
                 )
@@ -370,86 +590,131 @@ CRITICAL RULES:
                     cache = self._get_news_cache()
                     cache.mark_used(article_id)
                 
+                # Add to conversation memory
+                self.memory.add_message(
+                    author=agent["name"],
+                    author_id=agent_id,
+                    content=message[:500],
+                    is_agent=True,
+                    is_human=False,
+                )
+                
                 logger.info(
                     "Posted casual chat",
                     agent=agent_id,
-                    article_id=article_id,
                     message_length=len(message),
-                    message=message[:100] if len(message) > 100 else message,
                 )
                 return True
                 
         except httpx.HTTPError as e:
-            logger.error(
-                "Failed to post casual chat",
-                agent=agent_id,
-                error=str(e),
-            )
+            logger.error(f"Failed to post chat: {e}")
             return False
 
-    async def trigger_casual_chat(
-        self,
-        agent_id: Optional[str] = None,
-        force: bool = False,
-    ) -> bool:
-        """
-        Trigger a casual chat message from one or more agents.
-        
-        Args:
-            agent_id: Specific agent to trigger (None = select based on personality)
-            force: Bypass work hours and frequency checks
-        
-        Returns:
-            True if a message was posted
-        """
-        if not self.enabled and not force:
-            logger.debug("Casual chat disabled")
+    # =========================================================================
+    # TRIGGER METHODS
+    # =========================================================================
+
+    async def trigger_chat(self, agent_id: Optional[str] = None) -> bool:
+        """Trigger a casual chat message."""
+        if not self.enabled:
             return False
         
-        if not self.webhook_url:
-            logger.debug("No general webhook configured")
-            return False
-        
-        # Ensure news cache is refreshed
+        # Ensure news cache is fresh
         cache = self._get_news_cache()
         if cache.needs_refresh:
             await cache.refresh()
         
-        # Determine which agent(s) should chat
-        candidates = [agent_id] if agent_id else list(AGENTS.keys())
+        # Select agent if not specified
+        if agent_id is None:
+            candidates = list(AGENTS.keys())
+            random.shuffle(candidates)
+            for aid in candidates:
+                personality = self.pm.load(aid)
+                if self.should_chat(personality):
+                    agent_id = aid
+                    break
         
-        for aid in candidates:
-            personality = self.pm.load(aid)
+        if agent_id is None:
+            return False
+        
+        # Select conversation type and generate message
+        conv_type = self.select_conversation_type()
+        message, article_id = await self.generate_message(agent_id, conv_type)
+        
+        return await self.post_message(agent_id, message, article_id)
+
+    async def respond_to_human(
+        self,
+        human_message: str,
+        human_author: str,
+        human_author_id: str,
+    ) -> bool:
+        """Respond to a human message in general chat."""
+        if not self.enabled:
+            return False
+        
+        # Add human message to memory
+        self.memory.add_message(
+            author=human_author,
+            author_id=human_author_id,
+            content=human_message[:500],
+            is_agent=False,
+            is_human=True,
+        )
+        
+        # Select which agent should respond
+        # Prefer agents within work hours with relevant expertise
+        best_agent = None
+        best_score = 0
+        
+        for agent_id in AGENTS.keys():
+            personality = self.pm.load(agent_id)
             
-            if not force:
-                if not self.is_within_work_hours(personality):
-                    continue
-                if not self.should_respond(personality):
-                    continue
+            score = 0
             
-            # Generate and post message based on news
-            message, article_id = await self.generate_chat_message(personality)
-            success = await self.post_chat_message(aid, message, article_id)
+            # Work hours bonus
+            if self.is_within_work_hours(personality):
+                score += 5
+            else:
+                score += 1  # Can still respond outside work hours
             
-            if success:
-                return True
+            # Topic relevance
+            msg_lower = human_message.lower()
+            for topic in personality.chat_behavior.topics:
+                if topic.lower() in msg_lower:
+                    score += 3
+            
+            # Initiative trait
+            score += personality.get_trait("initiative") * 2
+            
+            # Random factor
+            score += random.random() * 2
+            
+            if score > best_score:
+                best_score = score
+                best_agent = agent_id
+        
+        if best_agent:
+            # Small delay to feel natural
+            await asyncio.sleep(random.uniform(2, 8))
+            
+            message, _ = await self.generate_message(
+                best_agent,
+                ConversationType.HUMAN_RESPONSE,
+                context=human_message,
+            )
+            return await self.post_message(best_agent, message)
         
         return False
 
 
 # =============================================================================
-# BACKGROUND CHAT TASK
+# BACKGROUND LOOP
 # =============================================================================
 
 
 async def casual_chat_loop(manager: CasualChatManager) -> None:
-    """
-    Background task that triggers casual chat at intervals.
-    
-    This runs continuously and selects agents to chat based on
-    their personality-driven schedules. Chat content is driven
-    by real security news from the news cache.
-    """
+    """Background task for periodic casual chat."""
     logger.info("Starting casual chat background loop")
     
     # Initial news cache refresh
@@ -471,31 +736,10 @@ async def casual_chat_loop(manager: CasualChatManager) -> None:
             if cache.needs_refresh:
                 await cache.refresh()
             
-            # Pick a random agent to potentially chat
-            agent_ids = list(AGENTS.keys())
-            random.shuffle(agent_ids)
+            # Try to trigger a chat
+            await manager.trigger_chat()
             
-            for agent_id in agent_ids:
-                personality = manager.pm.load(agent_id)
-                
-                # Check if within work hours
-                if not manager.is_within_work_hours(personality):
-                    continue
-                
-                # Check if enough time has passed since last chat
-                last_chat = manager._last_chat_times.get(agent_id)
-                if last_chat:
-                    elapsed = (datetime.now(timezone.utc) - last_chat).total_seconds()
-                    min_delay = manager.get_next_chat_delay(personality) / 2
-                    if elapsed < min_delay:
-                        continue
-                
-                # Random chance based on frequency
-                if manager.should_respond(personality):
-                    await manager.trigger_casual_chat(agent_id=agent_id)
-                    break  # Only one agent chats per interval
-            
-            # Wait before next check (5-10 minutes)
+            # Wait before next attempt (5-10 minutes)
             delay = random.uniform(300, 600)
             await asyncio.sleep(delay)
             
@@ -508,8 +752,9 @@ async def casual_chat_loop(manager: CasualChatManager) -> None:
 
 
 # =============================================================================
-# SINGLETON AND CONVENIENCE FUNCTIONS
+# SINGLETON AND CONVENIENCE
 # =============================================================================
+
 
 _manager: Optional[CasualChatManager] = None
 
@@ -525,11 +770,14 @@ def get_casual_chat_manager() -> CasualChatManager:
 async def start_casual_chat() -> asyncio.Task:
     """Start the casual chat background task."""
     manager = get_casual_chat_manager()
-    task = asyncio.create_task(casual_chat_loop(manager))
-    return task
+    return asyncio.create_task(casual_chat_loop(manager))
 
 
-async def post_casual_message(agent_id: str, message: str) -> bool:
-    """Post a casual message from a specific agent."""
+async def handle_human_message(
+    message: str,
+    author: str,
+    author_id: str,
+) -> bool:
+    """Handle a human message in general chat."""
     manager = get_casual_chat_manager()
-    return await manager.post_chat_message(agent_id, message)
+    return await manager.respond_to_human(message, author, author_id)

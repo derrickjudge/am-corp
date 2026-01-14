@@ -320,6 +320,7 @@ class NewsCache:
     def get_random_article(self, agent_id: Optional[str] = None) -> Optional[NewsArticle]:
         """
         Get a random article, optionally filtered for agent relevance.
+        Prioritizes unused articles, falls back to used ones if empty.
         
         Args:
             agent_id: Optional agent to filter for
@@ -330,13 +331,25 @@ class NewsCache:
         import random
         
         if agent_id:
-            articles = self.get_articles_for_agent(agent_id, limit=10, exclude_used=False)
+            # First try unused articles
+            articles = self.get_articles_for_agent(agent_id, limit=10, exclude_used=True)
+            if not articles:
+                # Fall back to used articles if none available
+                articles = self.get_articles_for_agent(agent_id, limit=10, exclude_used=False)
         else:
+            # Prefer unused articles
             articles = [
                 cached.article
                 for cached in self._articles.values()
-                if not cached.is_expired(self.cache_hours)
+                if not cached.is_expired(self.cache_hours) and cached.used_count == 0
             ]
+            if not articles:
+                # Fall back to any non-expired
+                articles = [
+                    cached.article
+                    for cached in self._articles.values()
+                    if not cached.is_expired(self.cache_hours)
+                ]
         
         if not articles:
             return None

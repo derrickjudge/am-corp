@@ -183,6 +183,25 @@ Use `./scripts/restart.sh` for safe restarts:
 - **No emoji prefix** in casual chat - emoji (🔍, ⚠️, 🧠, 📊) is for work messages only.
 - Casual messages must be about **real content** (news, CVEs, articles), not empty catchphrases.
 
+#### Conversation Types (Weighted)
+| Type | Weight | Description |
+|------|--------|-------------|
+| Security Discussion | 50% | Opinions on security topics, trends, techniques |
+| News Reaction | 25% | Reaction to articles (link 25-30% of time) |
+| Personal/Hobby | 15% | Non-work interests, life chat |
+| Team Banter | 5% | Responding to teammates |
+
+#### Agent Personal Interests (stored in personality YAML)
+- **Randy:** country music, BBQ, vintage trucks
+- **Victor:** gaming, CTF competitions, mechanical keyboards, anime/manga
+- **Ivy:** true crime podcasts, cryptic crosswords, massive shoe collection
+- **Rita:** knitting/crochet, statistics
+
+#### Human Interaction
+- Agents respond to ANY human message in `#am-corp-general`.
+- Conversation memory: 24 hours of context.
+- Off-hours: Very limited activity (not zero, but minimal).
+
 #### Security News Feeds
 - Agents discuss real security news, not generated filler content.
 - News is fetched from RSS/API sources and cached locally.

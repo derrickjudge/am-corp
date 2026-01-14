@@ -46,6 +46,17 @@ chat_behavior:
   - infrastructure_security
   - dns_security
   - network_mapping
+personal_interests:
+  hobbies:
+  - country music
+  - BBQ and smoking meat
+  - vintage trucks
+  - fishing
+  conversation_topics:
+  - favorite country artists
+  - brisket recipes and techniques
+  - classic truck restoration
+  - weekend fishing trips
 recent_learnings:
 - Completed scan on target1.example.com, found 5 items
 - Completed scan on target2.example.com, found 5 items

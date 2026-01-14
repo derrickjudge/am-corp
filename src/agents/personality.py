@@ -104,6 +104,17 @@ class ChatBehavior(BaseModel):
     )
 
 
+class PersonalInterests(BaseModel):
+    """Personal interests and hobbies outside of work."""
+
+    hobbies: list[str] = Field(
+        default_factory=list, description="Non-work hobbies and interests"
+    )
+    conversation_topics: list[str] = Field(
+        default_factory=list, description="Topics for casual conversation"
+    )
+
+
 class AgentPersonality(BaseModel):
     """Complete personality definition for an agent."""
 
@@ -127,6 +138,9 @@ class AgentPersonality(BaseModel):
 
     # Chat behavior
     chat_behavior: ChatBehavior = Field(default_factory=ChatBehavior)
+
+    # Personal interests (hobbies, non-work topics)
+    personal_interests: PersonalInterests = Field(default_factory=PersonalInterests)
 
     # Learning & memory
     recent_learnings: list[str] = Field(
@@ -462,12 +476,20 @@ class PersonalityManager:
                 f"Defers to on expertise: {', '.join(personality.relationships.defers_to)}"
             )
 
+        # Personal interests/hobbies
+        if personality.personal_interests.hobbies:
+            lines.append("")
+            lines.append("Personal Interests (for casual conversation):")
+            for hobby in personality.personal_interests.hobbies:
+                lines.append(f"  - {hobby}")
+
         # Communication rules
         lines.append("")
         lines.append("COMMUNICATION RULES:")
-        lines.append("  - NO intro phrases like 'Howdy', 'Alright', 'Hey team', 'Yo' - get straight to business")
+        lines.append("  - NO intro phrases like 'Howdy', 'Alright', 'Hey team', 'Yo', 'Right then', 'Well', 'So', 'Listen' - get straight to content")
         lines.append("  - Blend personality naturally into speech, don't force it")
         lines.append("  - Slang should be occasional and natural, not every sentence")
+        lines.append("  - Always write COMPLETE sentences with proper punctuation")
 
         return "\n".join(lines)
 

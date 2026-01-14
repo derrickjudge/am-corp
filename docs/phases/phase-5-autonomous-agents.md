@@ -51,14 +51,14 @@ Phase 5 transforms agents from command-driven tools into autonomous team members
 
 ### Week 2: Autonomy & Casual Chat
 
-#### 5.4 General Channel & Casual Chat (Partial ✅)
+#### 5.4 General Channel & Casual Chat ✅ (BETA)
 - [x] Create `#am-corp-general` channel integration
 - [x] Implement personality-driven chat frequency
 - [x] Add configurable work hours per agent
 - [x] Build message relevance filtering (not everyone responds)
-- [ ] Remove emoji prefix from casual messages (work emoji only for tasks)
-- [ ] Integrate security news feeds (**Required** - see 5.4.1)
-- [ ] Test natural conversation flow with real content
+- [x] Remove emoji prefix from casual messages (work emoji only for tasks)
+- [x] Integrate security news feeds (see 5.4.1)
+- [x] Test natural conversation flow with real content
 
 #### 5.4.1 Security News Feeds (NEW)
 Agents need real security content to discuss, not generated catchphrases.
@@ -85,25 +85,99 @@ Agents need real security content to discuss, not generated catchphrases.
 ```
 
 **Implementation Tasks:**
-- [ ] Create `src/feeds/security_news.py` - RSS/API fetcher
-- [ ] Create `src/feeds/news_cache.py` - Cache management
-- [ ] Add `data/news_cache.json` for persistence
-- [ ] Update `casual_chat.py` to use cached articles
-- [ ] Remove emoji prefix from casual posts
-- [ ] Add preflight check for feed connectivity
-- [ ] Match articles to agent topics of interest
-- [ ] Generate personality-driven commentary on real news
+- [x] Create `src/feeds/security_news.py` - RSS/API fetcher
+- [x] Create `src/feeds/news_cache.py` - Cache management
+- [x] Add `data/news_cache.json` for persistence
+- [x] Update `casual_chat.py` to use cached articles
+- [x] Remove emoji prefix from casual posts
+- [x] Add preflight check for feed connectivity
+- [x] Match articles to agent topics of interest
+- [x] Generate personality-driven commentary on real news
 
 **Example Output (Target):**
 ```
 Victor Vuln: That new Chrome V8 zero-day is wild. Exploited in the wild 
              for 2 weeks before disclosure. Browser security is a 
-             constant arms race fr.
+             constant arms race.
 
 Ivy Intel:   Interesting timing on that ransomware group going dark. 
              Two days after the FBI press conference. Coincidence? 
              I think not.
 ```
+
+#### 5.4.2 Enhanced Casual Conversation (BETA)
+
+Casual chat should feel like natural team conversation, not random article sharing.
+
+**Requirements:**
+- Agents respond to ANY human message in #general
+- 24-hour conversation memory for context
+- Mix of conversation types (security, personal, news, banter)
+- Links included 25-30% of time for news reactions
+- Very limited off-hours activity
+
+**Conversation Types:**
+| Type | Weight | Description |
+|------|--------|-------------|
+| `security_discussion` | 50% | Opinions on security topics, trends, techniques |
+| `news_reaction` | 25% | Reaction to something they read (mix of link/no link) |
+| `personal_hobby` | 15% | Non-work interests, casual life chat |
+| `team_banter` | 5% | Responding to teammates, jokes |
+| `response` | Variable | Reply to another agent or human message |
+
+**Agent Hobbies (stored in personality YAML):**
+- Randy: country music, BBQ, vintage trucks
+- Victor: gaming, CTF competitions, mechanical keyboards, anime/manga
+- Ivy: true crime podcasts, cryptic crosswords, massive shoe collection
+- Rita: knitting/crochet, statistics
+
+**Implementation Tasks:**
+- [x] Update personality YAMLs with hobbies for all 4 agents
+- [x] Create `src/discord_bot/conversation_memory.py` - 24hr message buffer
+- [x] Create message type selector with weighted categories
+- [x] Refactor `casual_chat.py` with new prompts per conversation type
+- [x] Add human message listener in #general channel
+- [ ] Test conversational flow with human interaction
+
+**Example Conversations:**
+```
+Security Discussion:
+Victor: Been thinking about how browser zero-days are getting more 
+        expensive on the market. Either vendors are getting better 
+        at patching or the attack surface is narrowing. Probably both.
+
+Personal Hobby:
+Ivy: Finally finished that cryptic crossword from last week. The clue 
+     was "Network infiltrator returns with cold feet (7)" - answer 
+     was PENGUIN. Took me embarrassingly long.
+
+News Reaction (no link):
+Randy: Saw that AWS had another S3 misconfiguration in the news. At 
+       this point I'm not even surprised. You'd think after all these 
+       years people would learn to check their bucket policies.
+
+News Reaction (with link):
+Victor: That new Chrome V8 zero-day is wild. Exploited in the wild 
+        for two weeks before disclosure. Browser security really is 
+        a constant arms race.
+        https://thehackernews.com/...
+
+Response to Human:
+Human: Anyone have thoughts on the new NIST password guidelines?
+Randy: Finally some common sense. The "change every 90 days" rule 
+       never made sense to me. Just leads to Password1, Password2...
+```
+
+**Known Issues (Beta):**
+- LLM sometimes generates incomplete sentences (fallback system in place)
+- Conversation flow could be more natural
+- Context handling needs refinement
+
+**Future Improvements:**
+- [ ] Better prompts for more natural conversation
+- [ ] Improved context handling and memory retrieval
+- [ ] Agent research capabilities - learning from findings
+- [ ] Smarter evolution based on work experience
 
 #### 5.5 Agent Initiative
 - [ ] Implement initiative proposal system

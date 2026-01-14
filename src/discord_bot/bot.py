@@ -26,6 +26,7 @@ from .validators import validate_command, validate_target
 from .agent_bots import send_as_randy
 from .scope_cache import get_scope_cache
 from .webhooks import post_alert
+from .casual_chat import handle_human_message
 
 logger = get_logger(__name__)
 
@@ -87,6 +88,25 @@ class AMCorpBot(commands.Bot):
         """Handle incoming messages."""
         # Ignore messages from bots (including ourselves)
         if message.author.bot:
+            return
+
+        # Check for messages in #general channel (human interaction with agents)
+        general_channel_id = settings.discord_channel_general
+        if general_channel_id and str(message.channel.id) == general_channel_id:
+            # Human message in general chat - trigger agent response
+            logger.debug(
+                "Human message in general",
+                author=str(message.author),
+                content=message.content[:50],
+            )
+            # Fire and forget - don't block on response
+            asyncio.create_task(
+                handle_human_message(
+                    message=message.content,
+                    author=str(message.author.display_name),
+                    author_id=str(message.author.id),
+                )
+            )
             return
 
         # Only process commands in the commands channel

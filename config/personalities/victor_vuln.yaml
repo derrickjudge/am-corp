@@ -44,6 +44,17 @@ chat_behavior:
   - cves
   - hacking_culture
   - ctf
+personal_interests:
+  hobbies:
+  - gaming
+  - CTF competitions
+  - mechanical keyboards
+  - anime and manga
+  conversation_topics:
+  - recent games and esports
+  - CTF writeups and challenges
+  - keyboard builds and switches
+  - current anime seasons
 recent_learnings:
 - API endpoints often have authentication bypass issues
 - 'Discovered critical http-vuln-cve2021-1234: Remote code execution in web server'

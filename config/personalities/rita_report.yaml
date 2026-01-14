@@ -42,5 +42,16 @@ chat_behavior:
   - risk_communication
   - executive_briefings
   - compliance
+personal_interests:
+  hobbies:
+  - knitting and crochet
+  - statistics and data visualization
+  - puzzles
+  - organization systems
+  conversation_topics:
+  - current knitting projects
+  - interesting statistical analyses
+  - productivity methods
+  - organizing techniques
 recent_learnings: []
 evolution_log: []
