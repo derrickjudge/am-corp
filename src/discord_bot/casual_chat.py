@@ -4,12 +4,14 @@ AM-Corp Casual Chat System (General Channel Integration)
 Manages casual conversation in #am-corp-general.
 Agents chat based on their personality traits, topics of interest,
 work hours, and chat frequency settings.
+
+Casual chat is driven by REAL security news, not generic prompts.
+Agents comment on actual articles, CVEs, and security events.
 """
 
 import asyncio
 import random
 from datetime import datetime, time, timezone
-from enum import Enum
 from typing import Optional
 
 import httpx
@@ -25,6 +27,8 @@ from src.agents.personality import (
     ChatBehavior,
     get_personality_manager,
 )
+from src.feeds.news_cache import NewsCache, get_news_cache
+from src.feeds.security_news import NewsArticle
 from src.utils.config import settings
 from src.utils.logging import get_logger
 
@@ -43,64 +47,14 @@ FREQUENCY_INTERVALS = {
 
 
 # =============================================================================
-# CASUAL CHAT TOPICS (Security-focused conversation starters)
+# FALLBACK TOPICS (Only used if news cache is empty)
 # =============================================================================
 
-TOPIC_PROMPTS = {
-    "reconnaissance_techniques": [
-        "What's your favorite passive recon technique?",
-        "I've been thinking about DNS enumeration patterns...",
-        "Anyone else notice interesting subdomain naming conventions lately?",
-        "Port scanning best practices - what's your approach?",
-    ],
-    "infrastructure_security": [
-        "Cloud misconfigurations are getting wild these days.",
-        "Load balancer fingerprinting is underrated.",
-        "What's your take on certificate transparency logs?",
-    ],
-    "dns_security": [
-        "DNS rebinding attacks are still a thing in 2026.",
-        "DNSSEC adoption is still surprisingly low.",
-        "Zone transfers shouldn't still be open, yet here we are.",
-    ],
-    "network_mapping": [
-        "Network topology discovery is an art form.",
-        "Finding the edge of a network is always interesting.",
-    ],
-    "vulnerabilities": [
-        "The CVE flood this week is wild.",
-        "Critical vulns keep getting more creative.",
-        "Patch management is harder than it should be.",
-    ],
-    "exploits": [
-        "Proof of concepts are getting faster to release.",
-        "Exploit chains are the new normal.",
-    ],
-    "hacking_culture": [
-        "The security community has been active lately.",
-        "Conferences this year have great talks lined up.",
-    ],
-    "threat_intelligence": [
-        "APT attribution is getting complicated.",
-        "Threat feeds need better correlation.",
-    ],
-    "correlation": [
-        "Connecting the dots between intel sources is key.",
-        "Pattern recognition in threat data is fascinating.",
-    ],
-    "security_research": [
-        "The research community keeps finding new attack surfaces.",
-        "Responsible disclosure timelines are a constant debate.",
-    ],
-    "reporting": [
-        "Report clarity is just as important as findings.",
-        "Executive summaries are an art form.",
-    ],
-    "documentation": [
-        "Good documentation saves so much time later.",
-        "Templates are useful but context matters.",
-    ],
-}
+FALLBACK_PROMPTS = [
+    "Security news has been quiet today. Anyone working on anything interesting?",
+    "Haven't seen many new CVEs drop lately. Is it just me?",
+    "The threat landscape seems calmer than usual. Suspicious.",
+]
 
 
 class CasualChatManager:
@@ -108,29 +62,36 @@ class CasualChatManager:
     Manages casual chat in the general channel.
     
     Features:
+    - News-driven conversations (real security content)
     - Personality-driven chat frequency
     - Work hours awareness
-    - Topic-based conversations
     - Message relevance filtering
+    - NO emoji prefix (emoji is for work only)
     """
 
     def __init__(self) -> None:
         self.enabled = settings.casual_chat_enabled
         self.webhook_url = settings.discord_webhook_general
         self.pm = get_personality_manager()
+        self.news_cache: Optional[NewsCache] = None
         
         # Track last chat times for each agent
         self._last_chat_times: dict[str, datetime] = {}
         
         # Track ongoing conversations
-        self._active_topic: Optional[str] = None
-        self._conversation_starter: Optional[str] = None
+        self._active_article: Optional[NewsArticle] = None
         
         logger.info(
             "CasualChatManager initialized",
             enabled=self.enabled,
             webhook_configured=bool(self.webhook_url),
         )
+    
+    def _get_news_cache(self) -> NewsCache:
+        """Get or initialize the news cache."""
+        if self.news_cache is None:
+            self.news_cache = get_news_cache()
+        return self.news_cache
 
     def is_within_work_hours(self, personality: AgentPersonality) -> bool:
         """Check if the current time is within the agent's work hours."""
@@ -213,63 +174,90 @@ class CasualChatManager:
         
         return random.random() < prob
 
-    def select_topic(self, personality: AgentPersonality) -> tuple[str, str]:
+    def get_article_for_agent(self, agent_id: str) -> Optional[NewsArticle]:
         """
-        Select a topic and message for the agent to discuss.
+        Get a relevant news article for the agent to discuss.
         
         Returns:
-            Tuple of (topic_key, message)
+            A news article relevant to the agent's interests, or None
         """
-        # Prefer agent's topics of interest
-        agent_topics = personality.chat_behavior.topics
-        available_topics = [t for t in agent_topics if t in TOPIC_PROMPTS]
+        cache = self._get_news_cache()
+        articles = cache.get_articles_for_agent(agent_id, limit=5, exclude_used=True)
         
-        if not available_topics:
-            # Fall back to any topic
-            available_topics = list(TOPIC_PROMPTS.keys())
+        if articles:
+            return random.choice(articles)
         
-        topic = random.choice(available_topics)
-        messages = TOPIC_PROMPTS.get(topic, ["..."])
-        message = random.choice(messages)
+        # If no unused articles, allow reuse
+        articles = cache.get_articles_for_agent(agent_id, limit=5, exclude_used=False)
+        if articles:
+            return random.choice(articles)
         
-        return topic, message
+        return None
 
     async def generate_chat_message(
         self,
         personality: AgentPersonality,
-        context: Optional[str] = None,
-    ) -> str:
+        article: Optional[NewsArticle] = None,
+    ) -> tuple[str, Optional[str]]:
         """
-        Generate a chat message using the agent's personality.
+        Generate a chat message about a news article using the agent's personality.
         
-        Uses Gemini to create a natural, personality-driven response.
+        Args:
+            personality: Agent personality
+            article: Optional article to discuss (fetches one if not provided)
+        
+        Returns:
+            Tuple of (message, article_id) - article_id is None if no article used
         """
         from google import genai
         from google.genai import types
         
-        topic, base_message = self.select_topic(personality)
+        # Get article if not provided
+        if article is None:
+            article = self.get_article_for_agent(personality.agent_id)
         
         # Build personality context
         personality_context = self.pm.get_prompt_context(personality.agent_id)
         
-        prompt = f"""You are {personality.agent_id}, a security professional chatting casually with teammates.
+        if article:
+            # Generate commentary on the article
+            prompt = f"""You are {personality.agent_id}, a security professional chatting casually with teammates.
 
 {personality_context}
 
-Generate a casual message about this topic: {topic}
-Starting point (rephrase naturally): {base_message}
+You just saw this security news article and want to share your thoughts:
+
+ARTICLE TITLE: {article.title}
+SOURCE: {article.source.value}
+{f"SUMMARY: {article.summary[:300]}..." if article.summary else ""}
+
+Generate a casual message sharing your reaction/opinion about this news.
+
+Rules:
+- Keep it short (1-3 sentences)
+- Be conversational and natural - like texting a colleague
+- Show your personality through word choice and reaction
+- You can reference the article directly or just share your take
+- DO NOT use hashtags or emojis
+- DO NOT be overly formal
+- DO NOT start with "Hey team" or similar greetings
+- Sound like you're genuinely interested/concerned/amused by the news
+"""
+        else:
+            # Fallback: generate a generic message
+            fallback = random.choice(FALLBACK_PROMPTS)
+            prompt = f"""You are {personality.agent_id}, a security professional chatting casually with teammates.
+
+{personality_context}
+
+Generate a brief casual message. Starting point: {fallback}
 
 Rules:
 - Keep it short (1-2 sentences)
 - Be conversational and natural
-- Show your personality through word choice
-- Reference your interests or recent experiences if relevant
-- DO NOT use hashtags
-- DO NOT be overly formal
+- Show your personality
+- DO NOT use hashtags or emojis
 """
-        
-        if context:
-            prompt += f"\nContext from ongoing conversation: {context}"
         
         try:
             client = genai.Client(api_key=settings.gemini_api_key)
@@ -279,12 +267,17 @@ Rules:
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     temperature=0.9,
-                    max_output_tokens=150,
+                    max_output_tokens=200,
                 ),
             )
             
             if response and response.text:
-                return response.text.strip()
+                message = response.text.strip()
+                # Clean up any accidental emoji at the start
+                if message and message[0] in "🔍⚠️🧠📊":
+                    message = message[1:].strip()
+                return message, article.id if article else None
+                
         except Exception as e:
             logger.error(
                 "Failed to generate chat message",
@@ -292,14 +285,22 @@ Rules:
                 error=str(e),
             )
         
-        return base_message
+        # Fallback
+        if article:
+            return f"Interesting article about {article.title[:50]}...", article.id
+        return random.choice(FALLBACK_PROMPTS), None
 
     async def post_chat_message(
         self,
         agent_id: str,
         message: str,
+        article_id: Optional[str] = None,
     ) -> bool:
-        """Post a casual chat message to the general channel."""
+        """
+        Post a casual chat message to the general channel.
+        
+        NOTE: No emoji prefix for casual chat - emoji is for work only.
+        """
         if not self.webhook_url:
             logger.warning("No general webhook configured, cannot post chat")
             return False
@@ -309,8 +310,9 @@ Rules:
             logger.error(f"Unknown agent: {agent_id}")
             return False
         
-        # Format message with agent emoji
-        formatted_message = f"{agent['emoji']} {message}"
+        # NO emoji prefix for casual chat - just the message
+        # Emoji prefixes are reserved for work-related messages
+        formatted_message = message
         
         try:
             async with httpx.AsyncClient() as client:
@@ -325,9 +327,15 @@ Rules:
                 
                 self._last_chat_times[agent_id] = datetime.now(timezone.utc)
                 
+                # Mark article as used
+                if article_id:
+                    cache = self._get_news_cache()
+                    cache.mark_used(article_id)
+                
                 logger.debug(
                     "Posted casual chat",
                     agent=agent_id,
+                    article_id=article_id,
                     preview=message[:50],
                 )
                 return True
@@ -363,6 +371,11 @@ Rules:
             logger.debug("No general webhook configured")
             return False
         
+        # Ensure news cache is refreshed
+        cache = self._get_news_cache()
+        if cache.needs_refresh:
+            await cache.refresh()
+        
         # Determine which agent(s) should chat
         candidates = [agent_id] if agent_id else list(AGENTS.keys())
         
@@ -375,9 +388,9 @@ Rules:
                 if not self.should_respond(personality):
                     continue
             
-            # Generate and post message
-            message = await self.generate_chat_message(personality)
-            success = await self.post_chat_message(aid, message)
+            # Generate and post message based on news
+            message, article_id = await self.generate_chat_message(personality)
+            success = await self.post_chat_message(aid, message, article_id)
             
             if success:
                 return True
@@ -395,15 +408,29 @@ async def casual_chat_loop(manager: CasualChatManager) -> None:
     Background task that triggers casual chat at intervals.
     
     This runs continuously and selects agents to chat based on
-    their personality-driven schedules.
+    their personality-driven schedules. Chat content is driven
+    by real security news from the news cache.
     """
     logger.info("Starting casual chat background loop")
+    
+    # Initial news cache refresh
+    try:
+        cache = manager._get_news_cache()
+        await cache.refresh(force=True)
+        logger.info(f"Initial news cache loaded: {cache.article_count} articles")
+    except Exception as e:
+        logger.error(f"Failed initial news cache refresh: {e}")
     
     while True:
         try:
             if not manager.enabled:
                 await asyncio.sleep(60)
                 continue
+            
+            # Refresh news cache periodically
+            cache = manager._get_news_cache()
+            if cache.needs_refresh:
+                await cache.refresh()
             
             # Pick a random agent to potentially chat
             agent_ids = list(AGENTS.keys())

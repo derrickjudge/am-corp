@@ -422,6 +422,60 @@ class PreflightChecker:
     # CONNECTIVITY CHECKS
     # =========================================================================
 
+    async def check_connectivity_news_feeds(self) -> None:
+        """Check news feed connectivity for casual chat."""
+        if self.quick_mode:
+            self._add_result(
+                "connectivity.news_feeds",
+                CheckStatus.SKIP,
+                "Skipped in quick mode",
+            )
+            return
+        
+        import time
+        start = time.time()
+        
+        # Check if casual chat is enabled
+        casual_enabled = os.getenv("CASUAL_CHAT_ENABLED", "true").lower() == "true"
+        if not casual_enabled:
+            self._add_result(
+                "connectivity.news_feeds",
+                CheckStatus.SKIP,
+                "Skipped - casual chat disabled",
+            )
+            return
+        
+        # Test Hacker News API (most reliable, free, no auth)
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    "https://hacker-news.firebaseio.com/v0/topstories.json"
+                )
+                if response.status_code == 200:
+                    stories = response.json()
+                    self._add_result(
+                        "connectivity.news_feeds",
+                        CheckStatus.PASS,
+                        f"News feeds reachable ({len(stories)} HN stories)",
+                        {"hacker_news": True, "story_count": len(stories)},
+                        duration_ms=(time.time() - start) * 1000,
+                    )
+                else:
+                    self._add_result(
+                        "connectivity.news_feeds",
+                        CheckStatus.WARN,
+                        f"Hacker News returned {response.status_code}",
+                        {"hacker_news": False},
+                    )
+        except Exception as e:
+            self._add_result(
+                "connectivity.news_feeds",
+                CheckStatus.WARN,
+                f"Cannot reach news feeds: {str(e)[:50]}",
+                {"error": str(e)},
+            )
+
     async def check_connectivity_discord(self) -> None:
         """Check Discord API connectivity."""
         if self.quick_mode:
@@ -674,6 +728,7 @@ class PreflightChecker:
         # Connectivity checks (async)
         await self.check_connectivity_discord()
         await self.check_connectivity_gemini()
+        await self.check_connectivity_news_feeds()
         self.check_connectivity_dns()
         
         # Filesystem checks (synchronous)
