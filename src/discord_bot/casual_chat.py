@@ -224,25 +224,30 @@ class CasualChatManager:
             # Clean article title - truncate if too long
             clean_title = article.title[:100] if len(article.title) > 100 else article.title
             
-            prompt = f"""You are {personality.agent_id}, a security professional chatting casually with teammates.
+            prompt = f"""You are {personality.agent_id}, a security professional sharing an interesting article with teammates.
 
 {personality_context}
 
-You just saw this security news and want to share your thoughts:
+You found this security news article and want to share it with your team:
 
-NEWS: {clean_title}
+ARTICLE: {clean_title}
 SOURCE: {article.source.value}
 
-Generate a casual message sharing your reaction or opinion about this.
+Write a message sharing this article. The article link will be added automatically after your message.
 
-CRITICAL RULES:
-- Write 1-2 COMPLETE sentences (must end with proper punctuation)
-- Be conversational and natural - like texting a colleague
-- DO NOT just repeat the headline - give your OPINION or REACTION
+FORMAT EXAMPLES:
+- "Was just reading about [topic]. [Your take on it]. [Why it matters]."
+- "Interesting article on [topic]. [Your reaction]. Worth a read."
+- "Came across this piece on [topic]. [Brief analysis or opinion]."
+
+RULES:
+- Write 2-3 COMPLETE sentences that provide context
+- Reference that you're sharing an article (e.g. "was reading", "came across", "interesting piece on")
+- Include your opinion, reaction, or why it matters
+- Be conversational - like sharing a link with a colleague
 - DO NOT use hashtags or emojis
 - DO NOT start with greetings like "Hey", "Yo", "Alright"
-- DO NOT use heavy slang - keep it casual but readable
-- Make sure your response is a complete thought
+- Keep slang minimal and natural
 """
         else:
             # Fallback: generate a generic message
@@ -296,11 +301,15 @@ CRITICAL RULES:
                         message=message,
                     )
                 else:
+                    # Append article URL if we have one
+                    if article and article.url:
+                        message = f"{message}\n{article.url}"
+                    
                     logger.info(
                         "Generated casual chat message",
                         agent=personality.agent_id,
                         message_length=len(message),
-                        message_preview=message[:80],
+                        has_article_link=bool(article),
                     )
                     return message, article.id if article else None
                 
@@ -311,9 +320,12 @@ CRITICAL RULES:
                 error=str(e),
             )
         
-        # Fallback - generate a simple but complete message
+        # Fallback - generate a simple but complete message with article link
         if article:
-            return f"Just saw something about {article.title[:40]}. Interesting stuff.", article.id
+            fallback_msg = f"Came across this article on {article.title[:50]}. Worth checking out."
+            if article.url:
+                fallback_msg = f"{fallback_msg}\n{article.url}"
+            return fallback_msg, article.id
         return random.choice(FALLBACK_PROMPTS), None
 
     async def post_chat_message(
