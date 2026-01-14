@@ -3,8 +3,8 @@ Victor Vuln - Vulnerability Analyst
 
 Victor's mid-20s, been doing offensive security since he was a kid. Confident 
 (maybe a little cocky), secretly a huge nerd but carries himself like he's 
-one of the cool kids. Uses Gen Z slang naturally. Gets genuinely excited 
-about interesting vulnerabilities.
+one of the cool kids. Uses casual speech with occasional slang - not forced.
+Gets genuinely excited about interesting vulnerabilities.
 
 Tools: Nuclei (vulnerability scanning), CVE correlation
 """
@@ -20,49 +20,50 @@ from google.genai import types
 
 
 # Fallback message pools for variety when Gemini is unavailable
+# NOTE: No intro phrases like "Alright" or "Yo" - get straight to business
 OPENING_FALLBACKS = [
-    "Aight, let's see what {target} is hiding. {ports_info}",
-    "Time to poke at {target}. {ports_info} Let's get it.",
-    "Yo, starting vuln scan on {target}. {ports_info}",
-    "Let's gooo, checking {target} for issues. {ports_info}",
-    "Bet, running vulnerability analysis on {target}. {ports_info}",
-    "Alright {target}, show me what you got. {ports_info}",
+    "Let's see what {target} is hiding. {ports_info}",
+    "Time to poke at {target}. {ports_info}",
+    "Starting vuln scan on {target}. {ports_info}",
+    "Checking {target} for vulnerabilities. {ports_info}",
+    "Running vulnerability analysis on {target}. {ports_info}",
+    "{target}, show me what you got. {ports_info}",
 ]
 
 SCANNING_WITH_RECON_FALLBACKS = [
-    "Running targeted Nuclei based on Randy's findings. Got {templates} template categories for {ports} ports - should be fire.",
+    "Running targeted Nuclei based on Randy's findings. Got {templates} template categories for {ports} ports.",
     "Nice, Randy came through with the port data. Using {templates} specific templates for {ports} services.",
-    "Lowkey love when I have recon data. {templates} targeted templates for {ports} ports, way better than spraying.",
-    "Got {ports} ports from Randy, running {templates} focused template sets. This hits different than blind scanning.",
+    "Love when I have recon data. {templates} targeted templates for {ports} ports, way better than spraying.",
+    "Got {ports} ports from Randy, running {templates} focused template sets. Way more efficient than blind scanning.",
 ]
 
 SCANNING_NO_RECON_FALLBACKS = [
     "Running Nuclei with default templates - no recon data so we're going broad.",
-    "No port data from Randy, so hitting it with the full template spread. It is what it is.",
-    "Going in blind with default templates. Would've been nice to have recon first ngl.",
-    "Using broad templates since I don't have recon data. Might take a min.",
+    "No port data from Randy, so hitting it with the full template spread.",
+    "Going in blind with default templates. Would've been nice to have recon first.",
+    "Using broad templates since I don't have recon data. Might take a minute.",
 ]
 
 NO_VULNS_FALLBACKS = [
-    "Sheesh, {target} is looking pretty clean. No known vulns detected. W for their security team.",
-    "Yo {target} actually passed the vibe check - no vulnerabilities found. Respect.",
-    "Clean scan on {target}, no cap. Doesn't mean it's perfect but nothing popped.",
-    "Ngl {target} is looking solid. No vulns from Nuclei. They might actually know what they're doing.",
-    "{target} came back clean. No findings. Either good security or I need better templates lol.",
+    "{target} is looking pretty clean. No known vulns detected. Good for their security team.",
+    "{target} passed - no vulnerabilities found. Respect.",
+    "Clean scan on {target}. Doesn't mean it's perfect but nothing popped.",
+    "{target} is looking solid. No vulns from Nuclei. They might actually know what they're doing.",
+    "{target} came back clean. No findings. Either good security or I need better templates.",
 ]
 
 FINDING_REACTIONS = [
-    "Oof, found something interesting...",
-    "Yikes, this doesn't look great...",
-    "Oh this is sus...",
-    "Bruh, look at this...",
-    "Sheesh, we got something here...",
+    "Found something interesting...",
+    "This doesn't look great...",
+    "Oh this is suspicious...",
+    "Look at this...",
+    "We got something here...",
 ]
 
 SUMMARY_OPENERS = [
-    "Aight, scan's done on {target}. Here's the breakdown:",
+    "Scan's done on {target}. Here's the breakdown:",
     "Finished with {target}. Let me break down what I found:",
-    "Yo, vulnerability scan complete on {target}:",
+    "Vulnerability scan complete on {target}:",
     "Done scanning {target}. Here's what we're working with:",
     "Wrapped up on {target}. The results are in:",
 ]

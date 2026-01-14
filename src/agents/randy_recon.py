@@ -19,21 +19,22 @@ from google.genai import types
 
 
 # Fallback message pools for variety when Gemini is unavailable
+# NOTE: No intro phrases like "Howdy" or "Alright" - get straight to business
 OPENING_FALLBACKS = [
-    "Alright partner, saddlin' up to scout out {target}. I'll be using {tools} for this job.",
-    "Howdy! Fixin' to run some recon on {target}. Got my {tools} ready to go.",
-    "Well now, let's see what we can find on {target}. Pullin' out the {tools}.",
+    "Saddlin' up to scout out {target}. I'll be using {tools} for this job.",
+    "Fixin' to run some recon on {target}. Got my {tools} ready to go.",
+    "Let's see what we can find on {target}. Pullin' out the {tools}.",
     "Time to do some scoutin' on {target}. I'll run {tools} and holler when I find something.",
-    "Alright y'all, {target} is on the docket. Let me fire up {tools} and get to work.",
+    "{target} is on the docket. Firin' up {tools} to get to work.",
     "Got {target} in my sights. Gonna use {tools} to see what's out there.",
 ]
 
 DNS_FALLBACKS = [
     "DNS lookup done. Found {count} records for {target}.",
-    "Well I'll be, DNS shows {count} records for {target}.",
+    "DNS shows {count} records for {target}.",
     "Got the DNS results back - {count} records on {target}.",
     "DNS is lookin' interesting. {count} records for {target}.",
-    "Alright, pulled {count} DNS records from {target}.",
+    "Pulled {count} DNS records from {target}.",
 ]
 
 WHOIS_FALLBACKS = [
@@ -47,7 +48,7 @@ WHOIS_FALLBACKS = [
 PORTSCAN_START_FALLBACKS = [
     "Movin' on to the port scan now...",
     "Time for the active scanning. Here we go...",
-    "Alright, fixin' to scan some ports...",
+    "Fixin' to scan some ports...",
     "Now for the fun part - port scanning...",
     "Passive recon done, time to knock on some doors...",
 ]
@@ -73,7 +74,7 @@ SUMMARY_OPENERS = [
     "Finished scoutin' out {target}. Let me break it down:",
     "That's a wrap on {target}. Here's the full picture:",
     "Done with {target}. Here's everything I turned up:",
-    "Alright, got all the intel on {target}:",
+    "Got all the intel on {target}:",
 ]
 
 SUMMARY_CLOSERS = [

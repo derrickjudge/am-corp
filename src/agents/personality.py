@@ -437,10 +437,10 @@ class PersonalityManager:
             for trait, value in personality.evolved_traits.items():
                 lines.append(f"  - {trait}: {value:.1f}")
 
-        # Add catchphrases
+        # Add catchphrases with usage guidance
         if personality.communication.catchphrases:
             lines.append("")
-            lines.append("Signature Expressions:")
+            lines.append("Signature Expressions (sprinkle naturally, NEVER as greetings):")
             for phrase in personality.communication.catchphrases[:5]:
                 lines.append(f"  - \"{phrase}\"")
 
@@ -461,6 +461,13 @@ class PersonalityManager:
             lines.append(
                 f"Defers to on expertise: {', '.join(personality.relationships.defers_to)}"
             )
+
+        # Communication rules
+        lines.append("")
+        lines.append("COMMUNICATION RULES:")
+        lines.append("  - NO intro phrases like 'Howdy', 'Alright', 'Hey team', 'Yo' - get straight to business")
+        lines.append("  - Blend personality naturally into speech, don't force it")
+        lines.append("  - Slang should be occasional and natural, not every sentence")
 
         return "\n".join(lines)
 
@@ -529,17 +536,15 @@ DEFAULT_PERSONALITIES: dict[str, dict] = {
             skepticism=0.6,
         ),
         "communication": CommunicationStyle(
-            personality_expression=0.8,
-            emoji_usage=0.4,
-            slang_usage=0.7,
+            personality_expression=0.7,
+            emoji_usage=0.3,
+            slang_usage=0.3,
             catchphrases=[
-                "no cap",
-                "lowkey",
-                "sheesh",
-                "bet",
-                "fr fr",
-                "ngl",
-                "bussin",
+                "interesting",
+                "let's see",
+                "nice",
+                "solid",
+                "respect",
             ],
         ),
         "relationships": Relationships(
