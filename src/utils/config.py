@@ -43,10 +43,21 @@ class Settings(BaseSettings):
     discord_channel_results: str = Field(default="", description="Results channel ID")
     discord_channel_alerts: str = Field(default="", description="Alerts channel ID")
     discord_channel_debug: str = Field(default="", description="Debug channel ID")
+    discord_channel_thoughts: str = Field(default="", description="Thoughts channel ID")
+    discord_channel_general: str = Field(default="", description="General chat channel ID")
     
     # Debug channel settings
     debug_channel_enabled: bool = Field(
         default=False, description="Enable debug output to dedicated channel"
+    )
+    
+    # Thoughts channel settings
+    thoughts_channel_enabled: bool = Field(
+        default=True, description="Enable thoughts channel for agent reasoning"
+    )
+    thoughts_verbosity: str = Field(
+        default="normal",
+        description="Thoughts verbosity level: minimal, normal, verbose, all"
     )
 
     # Webhook URLs
@@ -55,6 +66,8 @@ class Settings(BaseSettings):
     )
     discord_webhook_results: str = Field(default="", description="Results webhook URL")
     discord_webhook_alerts: str = Field(default="", description="Alerts webhook URL")
+    discord_webhook_thoughts: str = Field(default="", description="Thoughts channel webhook URL")
+    discord_webhook_general: str = Field(default="", description="General chat webhook URL")
 
     # =========================================================================
     # LLM Configuration
@@ -106,6 +119,16 @@ class Settings(BaseSettings):
     )
 
     # =========================================================================
+    # Personality System
+    # =========================================================================
+    personality_dir: str = Field(
+        default="config/personalities", description="Directory for personality YAML files"
+    )
+    personality_evolution_enabled: bool = Field(
+        default=True, description="Enable personality evolution based on experiences"
+    )
+
+    # =========================================================================
     # Security Settings
     # =========================================================================
     enable_scope_verification: bool = Field(
@@ -137,6 +160,16 @@ class Settings(BaseSettings):
         lower_v = v.lower()
         if lower_v not in valid_envs:
             raise ValueError(f"environment must be one of {valid_envs}")
+        return lower_v
+
+    @field_validator("thoughts_verbosity")
+    @classmethod
+    def validate_thoughts_verbosity(cls, v: str) -> str:
+        """Validate thoughts verbosity is a valid level."""
+        valid_levels = {"minimal", "normal", "verbose", "all"}
+        lower_v = v.lower()
+        if lower_v not in valid_levels:
+            raise ValueError(f"thoughts_verbosity must be one of {valid_levels}")
         return lower_v
 
     @property

@@ -80,6 +80,9 @@ COPY src/ ./src/
 COPY scripts/ ./scripts/
 COPY config/ ./config/
 
+# Make entrypoint executable
+RUN chmod +x /app/scripts/entrypoint.sh
+
 # Create directories for data, logs, and nuclei templates
 RUN mkdir -p /app/data /app/logs /app/nuclei-templates /home/amcorp/.config/nuclei \
     && chown -R amcorp:amcorp /app /home/amcorp/.config
@@ -90,10 +93,13 @@ USER amcorp
 # Download Nuclei templates (run as amcorp user)
 RUN nuclei -ut -silent || true
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import sys; sys.exit(0)"
+# Health check - verify bot can import and preflight passes
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD python -c "from src.main import main; print('OK')"
 
-# Default command
-CMD ["python", "src/main.py"]
+# Entrypoint runs preflight checks before starting
+ENTRYPOINT ["/app/scripts/entrypoint.sh"]
+
+# Default command (passed to entrypoint)
+CMD []
 

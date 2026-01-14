@@ -36,6 +36,12 @@ DISCORD_WEBHOOK_RESULTS=
 # Alerts webhook - for errors and warnings
 DISCORD_WEBHOOK_ALERTS=
 
+# Thoughts webhook - for agent reasoning transparency
+DISCORD_WEBHOOK_THOUGHTS=
+
+# General webhook - for casual team conversation
+DISCORD_WEBHOOK_GENERAL=
+
 # =============================================================================
 # LLM CONFIGURATION
 # =============================================================================
@@ -104,6 +110,28 @@ ENABLE_AUDIT_LOG=true
 
 # Audit log file path
 AUDIT_LOG_FILE=logs/audit.log
+
+# =============================================================================
+# THOUGHTS CHANNEL SETTINGS
+# =============================================================================
+# Enable thoughts channel for agent reasoning transparency
+THOUGHTS_CHANNEL_ENABLED=true
+
+# Verbosity level: minimal, normal, verbose, all
+# - minimal: Major decisions only
+# - normal: Key reasoning steps (default)
+# - verbose: Everything including uncertainties
+# - all: Full stream of consciousness
+THOUGHTS_VERBOSITY=normal
+
+# =============================================================================
+# PERSONALITY SYSTEM
+# =============================================================================
+# Directory for personality YAML files
+PERSONALITY_DIR=config/personalities
+
+# Enable personality evolution based on experiences
+PERSONALITY_EVOLUTION_ENABLED=true
 
 # =============================================================================
 # DOCKER CONFIGURATION (used by docker-compose)

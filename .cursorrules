@@ -13,9 +13,127 @@ You are a Security Engineer and AI/ML Specialist that leverages Python for backe
 - **Automation:** n8n (workflow automation)
 - **Interface:** Discord.py
 - **LLM:** Gemini API (gemini-2.5-flash)
-- **Security Tools:** Nmap, Nuclei
+- **Security Tools:** Nmap, Nuclei (installed IN the container, NOT on host)
 
 > **Note:** Use Podman instead of Docker/Rancher Desktop on macOS with corporate security (Netskope). Docker containers get blocked due to SSL interception issues.
+
+---
+
+## Containerization (CRITICAL)
+
+### All Code Runs in Containers
+- The bot and all agents run inside the `am-corp-bot` container, NOT on the host system.
+- Security tools (nmap, nuclei, dig, whois) are installed in the container via Dockerfile.
+- NEVER assume tools are available on the host - they must be in the container.
+- NEVER run `python -m src.main` directly on the host for production/testing.
+
+### Running the Application
+```bash
+# Build the container (includes all security tools)
+podman-compose build
+
+# Start the containerized bot
+podman-compose up -d
+
+# View logs
+podman-compose logs -f am-corp-bot
+
+# Stop
+podman-compose down
+```
+
+### Development Workflow
+1. Make code changes locally
+2. **Stop and clean up** (see Process Cleanup section):
+   ```bash
+   podman-compose down
+   pkill -9 -f "python.*src" 2>/dev/null || true
+   ```
+3. Rebuild container: `podman-compose build`
+4. Start: `podman-compose up -d`
+5. Verify single instance: `podman ps | grep am-corp`
+6. Test via Discord commands
+
+### Tool Availability
+Tools available INSIDE the container (Dockerfile installs them):
+- `dig` (dnsutils)
+- `whois`
+- `nmap`
+- `nuclei` (with templates auto-downloaded)
+
+### Volumes (Persisted Data)
+- `./data:/app/data` - Scope cache, conversation history
+- `./logs:/app/logs` - Application logs
+- `./config/personalities:/app/config/personalities` - Personality YAML files
+- `nuclei-templates` - Named volume for Nuclei templates
+
+### Preflight Checks (CRITICAL)
+The container runs preflight checks automatically on every startup via `src/preflight.py`.
+
+**What Preflight Validates:**
+- **Tools:** nmap, nuclei (+ templates), dig, whois
+- **Config:** Discord token/guild/channels, Gemini API, webhooks
+- **Connectivity:** Discord API, Gemini API, DNS resolution (in full mode)
+- **Filesystem:** data/, logs/, personalities/ directories are writable
+
+**Adding New Features:**
+When adding new features that require tools, APIs, or configuration:
+1. Add a preflight check in `src/preflight.py`
+2. Critical checks (required for bot to run) should return `CheckStatus.FAIL`
+3. Optional checks should return `CheckStatus.WARN`
+4. Test both passing and failing scenarios
+
+**Running Preflight Manually:**
+```bash
+# Quick check (skips network tests)
+podman exec am-corp-bot python src/preflight.py --quick
+
+# Full check (includes connectivity tests)
+podman exec am-corp-bot python src/preflight.py
+
+# JSON output for automation
+podman exec am-corp-bot python src/preflight.py --json
+```
+
+### Process Cleanup (CRITICAL)
+**Before every restart, verify no duplicate processes are running.**
+
+Multiple bot instances cause commands to be processed multiple times.
+
+**Always run this cleanup before starting:**
+```bash
+# Kill any host Python processes
+pkill -9 -f "python.*src.main" 2>/dev/null || true
+pkill -9 -f "python.*src/main" 2>/dev/null || true
+
+# Stop all containers
+podman-compose down
+podman stop -a 2>/dev/null || true
+podman rm -a 2>/dev/null || true
+
+# Verify cleanup
+ps aux | grep -E "python.*src" | grep -v grep  # Should show nothing
+podman ps -a | grep am-corp  # Should show nothing
+
+# Now safe to start
+podman-compose up -d
+```
+
+**After starting, verify single instance:**
+```bash
+# Should show exactly 1 container
+podman ps | grep am-corp-bot
+
+# Should show no host processes
+ps aux | grep -E "python.*src" | grep -v grep
+```
+
+**Convenience Script:**
+Use `./scripts/restart.sh` for safe restarts:
+```bash
+./scripts/restart.sh          # Restart without rebuild
+./scripts/restart.sh --build  # Rebuild and restart
+```
 
 ---
 

@@ -91,7 +91,9 @@ def _random_fallback(pool: list[str], **kwargs) -> str:
     return random.choice(pool).format(**kwargs)
 
 from src.agents import AGENT_RANDY_RECON, AGENTS
+from src.agents.personality import get_personality_manager
 from src.discord_bot.agent_bots import get_agent_manager, get_victor_mention
+from src.discord_bot.thoughts import post_thought, post_decision, post_finding, post_uncertainty
 from src.tools.recon_tools import (
     ToolResult,
     dig_lookup,
@@ -158,6 +160,7 @@ class RandyRecon:
     Randy Recon agent - handles reconnaissance operations.
     
     Uses Gemini for reasoning and personality, real tools for data gathering.
+    Personality evolves over time based on experiences.
     """
     
     def __init__(self) -> None:
@@ -166,6 +169,27 @@ class RandyRecon:
         self.emoji = AGENTS[AGENT_RANDY_RECON]["emoji"]
         self._client: genai.Client | None = None
         self._agent_manager = None
+        self._personality_manager = get_personality_manager()
+        
+        # Load personality on init
+        self._personality = self._personality_manager.load(self.agent_id)
+        logger.debug(
+            "Randy personality loaded",
+            version=self._personality.version,
+            evolved_traits=list(self._personality.evolved_traits.keys()),
+        )
+    
+    def _get_system_prompt(self) -> str:
+        """Build system prompt with current personality state."""
+        # Get dynamic personality context
+        personality_context = self._personality_manager.get_prompt_context(self.agent_id)
+        
+        # Combine base prompt with personality state
+        return f"""{RANDY_SYSTEM_PROMPT}
+
+---
+
+{personality_context}"""
     
     def _get_client(self) -> genai.Client:
         """Get or initialize the Gemini client."""
@@ -191,6 +215,27 @@ class RandyRecon:
             client = get_webhook_client()
             await client.post_agent_message(self.agent_id, message, "agent_chat")
     
+    async def _think(
+        self,
+        thought: str,
+        confidence: float | None = None,
+        category: str = "reasoning",
+    ) -> None:
+        """
+        Post a thought to the thoughts channel.
+        
+        Args:
+            thought: The thought text
+            confidence: Optional confidence level (0.0 to 1.0)
+            category: Thought category (decision, finding, reasoning, uncertainty, detail, stream)
+        """
+        await post_thought(
+            agent_id=self.agent_id,
+            thought=thought,
+            confidence=confidence,
+            category=category,
+        )
+    
     async def _generate_message(self, prompt: str, fallback: str = "") -> str:
         """
         Generate a message using Randy's personality via Gemini.
@@ -205,13 +250,13 @@ class RandyRecon:
             logger.info(f"[GEMINI] Sending request to Gemini API...")
             logger.debug(f"[GEMINI] Prompt preview: {prompt[:100]}...")
             
-            # Use the new google.genai API
+            # Use the new google.genai API with dynamic personality
             response = await asyncio.to_thread(
                 client.models.generate_content,
                 model=settings.gemini_model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    system_instruction=RANDY_SYSTEM_PROMPT,
+                    system_instruction=self._get_system_prompt(),
                 ),
             )
             
@@ -285,6 +330,14 @@ class RandyRecon:
             )
             return result
         
+        # Initial thinking - share reasoning about approach
+        await self._think(
+            f"Starting recon on {target}. Going to start passive with DNS and WHOIS "
+            f"before active scanning - don't want to trigger any alerts before I get intel.",
+            confidence=0.9,
+            category="decision",
+        )
+        
         # Opening message
         opening = await self._generate_message(
             f"You're starting reconnaissance on {target}. Generate a short, "
@@ -296,6 +349,12 @@ class RandyRecon:
         
         # Phase 1: DNS Lookup (passive)
         if "dig" in available:
+            await self._think(
+                "Starting with DNS enumeration - it's passive so won't alert anyone. "
+                "Looking for subdomains, mail servers, and anything unusual in the records.",
+                category="reasoning",
+            )
+            
             if verbose:
                 await self._post_message(
                     "**Phase 1: DNS Lookup**\n"
@@ -310,6 +369,37 @@ class RandyRecon:
             if result.dns_result.success and result.dns_result.parsed_data.get("records"):
                 records = result.dns_result.parsed_data.get("records", {})
                 record_count = sum(len(v) for v in records.values())
+                
+                # Analyze DNS records and share interesting findings as thoughts
+                mx_records = records.get("MX", [])
+                ns_records = records.get("NS", [])
+                txt_records = records.get("TXT", [])
+                
+                # Look for interesting patterns
+                if len(ns_records) >= 4:
+                    await self._think(
+                        f"Interesting - {len(ns_records)} name servers. Could be CDN + origin, "
+                        f"or legacy migration. Worth noting for context.",
+                        confidence=0.7,
+                        category="finding",
+                    )
+                
+                if len(mx_records) >= 3:
+                    await self._think(
+                        f"Multiple MX records ({len(mx_records)}). Might be using different "
+                        f"email providers or have redundancy setup.",
+                        category="detail",
+                    )
+                
+                # Check for SPF/DKIM in TXT records
+                spf_found = any("spf" in txt.lower() for txt in txt_records)
+                if txt_records and not spf_found:
+                    await self._think(
+                        "Seeing TXT records but no SPF. Could be misconfigured email security. "
+                        "Medium confidence - might be intentional.",
+                        confidence=0.6,
+                        category="uncertainty",
+                    )
                 
                 # Build detailed fallback with actual data
                 dns_details = []
@@ -329,6 +419,12 @@ class RandyRecon:
         
         # Phase 2: WHOIS Lookup (passive)
         if "whois" in available:
+            await self._think(
+                "Moving to WHOIS lookup. Want to see when the domain was registered, "
+                "who owns it, and if there's anything interesting about the registrar.",
+                category="reasoning",
+            )
+            
             if verbose:
                 # Extract base domain for whois
                 from src.tools.recon_tools import _extract_base_domain
@@ -345,6 +441,29 @@ class RandyRecon:
             
             if result.whois_result.success and result.whois_result.parsed_data:
                 whois_data = result.whois_result.parsed_data
+                
+                # Analyze WHOIS and share interesting findings as thoughts
+                creation_date = whois_data.get("creation_date", "")
+                registrar = whois_data.get("registrar", "")
+                
+                # Check domain age
+                if creation_date:
+                    # Try to determine if it's a young domain (potential risk)
+                    if "2024" in creation_date or "2025" in creation_date or "2026" in creation_date:
+                        await self._think(
+                            f"Domain appears relatively new (created {creation_date}). "
+                            f"New domains sometimes indicate less mature security practices.",
+                            confidence=0.6,
+                            category="finding",
+                        )
+                
+                # Check for privacy protection
+                registrant_org = whois_data.get("registrant_org", "")
+                if registrant_org and "privacy" in registrant_org.lower():
+                    await self._think(
+                        "WHOIS privacy protection is enabled. Can't determine actual owner.",
+                        category="detail",
+                    )
                 
                 # Build detailed fallback with actual WHOIS data
                 whois_details = []
@@ -375,6 +494,13 @@ class RandyRecon:
         if "nmap" in available:
             await asyncio.sleep(1)
             
+            await self._think(
+                "Passive recon done. Moving to active port scanning now. "
+                "This might show up in their logs, but we've already gathered good intel.",
+                confidence=0.85,
+                category="decision",
+            )
+            
             if verbose:
                 await self._post_message(
                     "**Phase 3: Port Scan (Active)**\n"
@@ -397,6 +523,44 @@ class RandyRecon:
                 ports = result.nmap_result.parsed_data.get("ports", [])
                 
                 if ports:
+                    # Analyze ports and share interesting findings as thoughts
+                    interesting_services = ["elasticsearch", "mongodb", "redis", "mysql", 
+                                           "postgresql", "ftp", "telnet", "vnc", "rdp"]
+                    risky_ports = [9200, 27017, 6379, 21, 23, 5900, 3389, 11211]
+                    
+                    for p in ports:
+                        service = p.get("service", "").lower()
+                        port_num = p.get("port", 0)
+                        version = p.get("version", "")
+                        
+                        # Check for interesting/risky services
+                        if service in interesting_services or port_num in risky_ports:
+                            significance = ""
+                            if service == "elasticsearch" or port_num == 9200:
+                                significance = "Elasticsearch often exposed without auth"
+                            elif service == "mongodb" or port_num == 27017:
+                                significance = "MongoDB without auth is a common issue"
+                            elif service == "redis" or port_num == 6379:
+                                significance = "Redis exposed can lead to RCE"
+                            elif port_num in [21, 23]:
+                                significance = "Legacy protocol, often insecure"
+                            
+                            confidence = 0.8 if significance else 0.6
+                            await self._think(
+                                f"Found {service or 'service'} on port {port_num}. "
+                                f"{significance} Victor should take a look.",
+                                confidence=confidence,
+                                category="finding",
+                            )
+                        
+                        # Check for outdated versions
+                        if version:
+                            await self._think(
+                                f"Got version info: {service} {version}. "
+                                f"Victor can check for CVEs.",
+                                category="detail",
+                            )
+                    
                     # Build detailed port list
                     port_details = []
                     for p in ports:
@@ -427,6 +591,17 @@ class RandyRecon:
         # Final Summary
         await asyncio.sleep(1)
         result.raw_findings = self._compile_findings(result)
+        
+        # Final thought summarizing the recon
+        total_ports = len(result.raw_findings.get("ports", []))
+        total_dns = sum(len(v) for v in result.raw_findings.get("dns", {}).values())
+        
+        await self._think(
+            f"Recon complete. Got {total_dns} DNS records and {total_ports} open ports. "
+            f"Compiling everything for the team.",
+            confidence=0.95,
+            category="decision",
+        )
         
         # Build the summary
         findings = result.raw_findings

@@ -91,7 +91,9 @@ def _random_fallback(pool: list[str], **kwargs) -> str:
     return random.choice(pool).format(**kwargs)
 
 from src.agents import AGENT_IVY_INTEL, AGENTS
+from src.agents.personality import get_personality_manager
 from src.discord_bot.agent_bots import get_agent_manager, get_victor_mention, get_rita_mention
+from src.discord_bot.thoughts import post_thought, post_finding
 from src.tools.intel_tools import (
     CVEDetails,
     ShodanResult,
@@ -176,12 +178,31 @@ class IvyIntelAgent:
     Ivy Intel - Threat Intelligence Analyst.
     
     Enriches findings with threat intelligence context.
+    Personality evolves over time based on experiences.
     """
     
     def __init__(self) -> None:
         self.agent_id = AGENT_IVY_INTEL
         self.agent_info = AGENTS[AGENT_IVY_INTEL]
         self.emoji = self.agent_info["emoji"]
+        self._personality_manager = get_personality_manager()
+        
+        # Load personality on init
+        self._personality = self._personality_manager.load(self.agent_id)
+        logger.debug(
+            "Ivy personality loaded",
+            version=self._personality.version,
+            evolved_traits=list(self._personality.evolved_traits.keys()),
+        )
+    
+    def _get_system_prompt(self) -> str:
+        """Build system prompt with current personality state."""
+        personality_context = self._personality_manager.get_prompt_context(self.agent_id)
+        return f"""{IVY_SYSTEM_PROMPT}
+
+---
+
+{personality_context}"""
     
     def _get_model(self) -> genai.Client:
         """Get Gemini model for message generation."""
@@ -199,6 +220,27 @@ class IvyIntelAgent:
             )
         else:
             logger.warning("Agent manager not available for posting")
+    
+    async def _think(
+        self,
+        thought: str,
+        confidence: float | None = None,
+        category: str = "reasoning",
+    ) -> None:
+        """
+        Post a thought to the thoughts channel.
+        
+        Args:
+            thought: The thought text
+            confidence: Optional confidence level (0.0 to 1.0)
+            category: Thought category (decision, finding, reasoning, uncertainty, detail, stream)
+        """
+        await post_thought(
+            agent_id=self.agent_id,
+            thought=thought,
+            confidence=confidence,
+            category=category,
+        )
     
     async def _generate_message(
         self, 
@@ -218,7 +260,7 @@ class IvyIntelAgent:
                 model=settings.gemini_model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    system_instruction=IVY_SYSTEM_PROMPT,
+                    system_instruction=self._get_system_prompt(),
                     temperature=0.7,
                     max_output_tokens=500,
                 ),
@@ -273,6 +315,19 @@ class IvyIntelAgent:
             target=target,
         )
         
+        # Initial thinking - what sources are available
+        source_count = 2 + sum([
+            capabilities["shodan"],
+            capabilities["virustotal"],
+            capabilities["securitytrails"],
+        ])
+        await self._think(
+            f"Starting intel on {target}. {source_count} sources available. "
+            f"Always want to look beyond the obvious - the surface findings rarely tell the whole story.",
+            confidence=0.9,
+            category="decision",
+        )
+        
         # Opening message
         available_sources = ["CVE enrichment", "EPSS scores"]
         if capabilities["shodan"]:
@@ -297,6 +352,12 @@ class IvyIntelAgent:
         
         # 1. CVE Enrichment
         if cves:
+            await self._think(
+                f"Got {len(cves)} CVE(s) to check. CVSS scores are one thing, but what "
+                f"I really want to know is EPSS - who's actually exploiting these in the wild.",
+                category="reasoning",
+            )
+            
             await self._post_message(f"Checking {len(cves)} CVE(s) for exploitation context...")
             result.cve_enrichments = await self._enrich_cves(cves, verbose)
             
@@ -442,6 +503,15 @@ class IvyIntelAgent:
             risk = assess_exploitation_risk(cve)
             if risk in ["CRITICAL", "HIGH"]:
                 high_risk_cves.append((cve, risk))
+        
+        # Share thinking about high-risk findings
+        if high_risk_cves:
+            await self._think(
+                f"Found {len(high_risk_cves)} CVE(s) with HIGH/CRITICAL exploitation risk. "
+                f"These aren't theoretical - they're being actively exploited. Priority bump needed.",
+                confidence=0.85,
+                category="finding",
+            )
         
         if high_risk_cves:
             victor_mention = get_victor_mention()

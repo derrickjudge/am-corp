@@ -73,7 +73,9 @@ def _random_fallback(pool: list[str], **kwargs) -> str:
     return random.choice(pool).format(**kwargs)
 
 from src.agents import AGENT_VICTOR_VULN, AGENTS
+from src.agents.personality import get_personality_manager
 from src.discord_bot.agent_bots import get_agent_manager, get_rita_mention, get_ivy_mention
+from src.discord_bot.thoughts import post_thought, post_finding
 from src.tools.vuln_tools import (
     VulnResult,
     nuclei_scan,
@@ -146,6 +148,7 @@ class VictorVuln:
     Victor Vuln agent - handles vulnerability scanning and analysis.
     
     Uses Gemini for reasoning and explanations, Nuclei for scanning.
+    Personality evolves over time based on experiences.
     """
     
     def __init__(self) -> None:
@@ -153,6 +156,24 @@ class VictorVuln:
         self.name = AGENTS[AGENT_VICTOR_VULN]["name"]
         self.emoji = AGENTS[AGENT_VICTOR_VULN]["emoji"]
         self._client: genai.Client | None = None
+        self._personality_manager = get_personality_manager()
+        
+        # Load personality on init
+        self._personality = self._personality_manager.load(self.agent_id)
+        logger.debug(
+            "Victor personality loaded",
+            version=self._personality.version,
+            evolved_traits=list(self._personality.evolved_traits.keys()),
+        )
+    
+    def _get_system_prompt(self) -> str:
+        """Build system prompt with current personality state."""
+        personality_context = self._personality_manager.get_prompt_context(self.agent_id)
+        return f"""{VICTOR_SYSTEM_PROMPT}
+
+---
+
+{personality_context}"""
     
     def _get_client(self) -> genai.Client:
         """Get or initialize the Gemini client."""
@@ -178,6 +199,27 @@ class VictorVuln:
             client = get_webhook_client()
             await client.post_agent_message(self.agent_id, message, "agent_chat")
     
+    async def _think(
+        self,
+        thought: str,
+        confidence: float | None = None,
+        category: str = "reasoning",
+    ) -> None:
+        """
+        Post a thought to the thoughts channel.
+        
+        Args:
+            thought: The thought text
+            confidence: Optional confidence level (0.0 to 1.0)
+            category: Thought category (decision, finding, reasoning, uncertainty, detail, stream)
+        """
+        await post_thought(
+            agent_id=self.agent_id,
+            thought=thought,
+            confidence=confidence,
+            category=category,
+        )
+    
     async def _generate_message(self, prompt: str, fallback: str = "") -> str:
         """
         Generate a message using Victor's personality via Gemini.
@@ -196,7 +238,7 @@ class VictorVuln:
                 model=settings.gemini_model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    system_instruction=VICTOR_SYSTEM_PROMPT,
+                    system_instruction=self._get_system_prompt(),
                 ),
             )
             
@@ -253,6 +295,22 @@ class VictorVuln:
         )
         
         result = VulnScanResult(target=target)
+        
+        # Initial thinking
+        if ports:
+            await self._think(
+                f"Got {len(ports)} ports from Randy's recon. Going to use smart template "
+                f"selection - way better than spraying everything.",
+                confidence=0.85,
+                category="decision",
+            )
+        else:
+            await self._think(
+                "No recon data to work with. Going to use default broad templates. "
+                "Might miss some stuff without knowing what services are running.",
+                confidence=0.6,
+                category="reasoning",
+            )
         
         # Check available tools
         available = get_available_vuln_tools()
@@ -352,6 +410,30 @@ class VictorVuln:
                     result.low_count += 1
                 else:
                     result.info_count += 1
+            
+            # Share thinking about findings
+            if result.critical_count > 0:
+                await self._think(
+                    f"Found {result.critical_count} CRITICAL vulns. This is bad. "
+                    f"Need to verify these aren't false positives before reporting.",
+                    confidence=0.75,
+                    category="finding",
+                )
+            elif result.high_count > 0:
+                await self._think(
+                    f"Got {result.high_count} HIGH severity findings. Definitely needs attention.",
+                    confidence=0.8,
+                    category="finding",
+                )
+            
+            # Analyze for CVEs that need Ivy's attention
+            cve_vulns = [v for v in vulns if v.get("cve_id")]
+            if cve_vulns:
+                await self._think(
+                    f"Found {len(cve_vulns)} CVE-related findings. Ivy should check "
+                    f"exploitation probability and threat intel.",
+                    category="reasoning",
+                )
             
             if vulns:
                 # Generate vulnerability summary

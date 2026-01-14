@@ -26,6 +26,8 @@ class WebhookClient:
             "agent_chat": settings.discord_webhook_agent_chat,
             "results": settings.discord_webhook_results,
             "alerts": settings.discord_webhook_alerts,
+            "thoughts": settings.discord_webhook_thoughts,
+            "general": settings.discord_webhook_general,
         }
 
     async def post_message(

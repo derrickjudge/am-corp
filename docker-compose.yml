@@ -1,6 +1,17 @@
 # =============================================================================
 # AM-Corp Docker Compose
 # =============================================================================
+#
+# Usage:
+#   podman-compose build                    # Build the container
+#   podman-compose up -d                    # Start the bot
+#   podman-compose logs -f                  # View logs
+#   podman-compose down                     # Stop the bot
+#
+# Preflight Check (manual):
+#   podman exec am-corp-bot python src/preflight.py
+#
+# =============================================================================
 
 services:
   # ---------------------------------------------------------------------------
@@ -22,10 +33,11 @@ services:
       - ENVIRONMENT=production
       - LOG_LEVEL=INFO
     
-    # Persist data, logs, and nuclei templates
+    # Persist data, logs, personalities, and nuclei templates
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
+      - ./config/personalities:/app/config/personalities
       - nuclei-templates:/app/nuclei-templates
     
     # Resource limits
