@@ -221,27 +221,28 @@ class CasualChatManager:
         
         if article:
             # Generate commentary on the article
+            # Clean article title - truncate if too long
+            clean_title = article.title[:100] if len(article.title) > 100 else article.title
+            
             prompt = f"""You are {personality.agent_id}, a security professional chatting casually with teammates.
 
 {personality_context}
 
-You just saw this security news article and want to share your thoughts:
+You just saw this security news and want to share your thoughts:
 
-ARTICLE TITLE: {article.title}
+NEWS: {clean_title}
 SOURCE: {article.source.value}
-{f"SUMMARY: {article.summary[:300]}..." if article.summary else ""}
 
-Generate a casual message sharing your reaction/opinion about this news.
+Generate a casual message sharing your reaction or opinion about this.
 
-Rules:
-- Keep it short (1-3 sentences)
+CRITICAL RULES:
+- Write 1-2 COMPLETE sentences (must end with proper punctuation)
 - Be conversational and natural - like texting a colleague
-- Show your personality through word choice and reaction
-- You can reference the article directly or just share your take
+- DO NOT just repeat the headline - give your OPINION or REACTION
 - DO NOT use hashtags or emojis
-- DO NOT be overly formal
-- DO NOT start with "Hey team" or similar greetings
-- Sound like you're genuinely interested/concerned/amused by the news
+- DO NOT start with greetings like "Hey", "Yo", "Alright"
+- DO NOT use heavy slang - keep it casual but readable
+- Make sure your response is a complete thought
 """
         else:
             # Fallback: generate a generic message
@@ -252,11 +253,11 @@ Rules:
 
 Generate a brief casual message. Starting point: {fallback}
 
-Rules:
-- Keep it short (1-2 sentences)
+CRITICAL RULES:
+- Write 1-2 COMPLETE sentences (must end with proper punctuation)
 - Be conversational and natural
-- Show your personality
 - DO NOT use hashtags or emojis
+- DO NOT start with greetings like "Hey", "Yo", "Alright"
 """
         
         try:
@@ -266,17 +267,42 @@ Rules:
                 model=settings.gemini_model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    temperature=0.9,
-                    max_output_tokens=200,
+                    temperature=0.8,
+                    max_output_tokens=300,
                 ),
             )
             
             if response and response.text:
                 message = response.text.strip()
+                
                 # Clean up any accidental emoji at the start
-                if message and message[0] in "🔍⚠️🧠📊":
+                while message and message[0] in "🔍⚠️🧠📊⚡🔥💀":
                     message = message[1:].strip()
-                return message, article.id if article else None
+                
+                # Validate message is complete (ends with punctuation)
+                if message and message[-1] not in ".!?":
+                    # Try to find the last complete sentence
+                    for punct in ".!?":
+                        idx = message.rfind(punct)
+                        if idx > 20:  # At least 20 chars for a sentence
+                            message = message[:idx + 1]
+                            break
+                
+                # Ensure message isn't too short or empty
+                if len(message) < 20:
+                    logger.warning(
+                        "Generated message too short, using fallback",
+                        agent=personality.agent_id,
+                        message=message,
+                    )
+                else:
+                    logger.info(
+                        "Generated casual chat message",
+                        agent=personality.agent_id,
+                        message_length=len(message),
+                        message_preview=message[:80],
+                    )
+                    return message, article.id if article else None
                 
         except Exception as e:
             logger.error(
@@ -285,9 +311,9 @@ Rules:
                 error=str(e),
             )
         
-        # Fallback
+        # Fallback - generate a simple but complete message
         if article:
-            return f"Interesting article about {article.title[:50]}...", article.id
+            return f"Just saw something about {article.title[:40]}. Interesting stuff.", article.id
         return random.choice(FALLBACK_PROMPTS), None
 
     async def post_chat_message(
@@ -332,11 +358,12 @@ Rules:
                     cache = self._get_news_cache()
                     cache.mark_used(article_id)
                 
-                logger.debug(
+                logger.info(
                     "Posted casual chat",
                     agent=agent_id,
                     article_id=article_id,
-                    preview=message[:50],
+                    message_length=len(message),
+                    message=message[:100] if len(message) > 100 else message,
                 )
                 return True
                 
