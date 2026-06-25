@@ -465,10 +465,10 @@ class IvyIntelAgent:
         # Trigger pattern observations for notable intel
         if result.cve_enrichments:
             for cve in result.cve_enrichments[:3]:  # Limit to avoid spam
-                if cve.get("epss", 0) > 0.3:
+                if (cve.epss_score or 0) > 0.3:
                     await trigger_pattern_observed(
                         agent_id=self.agent_id,
-                        pattern=f"High exploitation probability for {cve.get('cve_id')}",
+                        pattern=f"High exploitation probability for {cve.cve_id}",
                         significance="high",
                     )
         

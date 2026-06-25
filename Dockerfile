@@ -42,14 +42,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Add custom CA certificates (e.g., corporate proxy certs)
-# These get added at build time and runtime via mount
-COPY certs/*.pem /usr/local/share/ca-certificates/custom/
-RUN for cert in /usr/local/share/ca-certificates/custom/*.pem; do \
-        if [ -f "$cert" ]; then \
-            cp "$cert" "/usr/local/share/ca-certificates/$(basename "$cert" .pem).crt"; \
-        fi; \
-    done \
-    && update-ca-certificates
+# certs/ directory may be empty in non-corporate environments
+COPY certs/ /tmp/certs/
+RUN mkdir -p /usr/local/share/ca-certificates/custom/ \
+    && find /tmp/certs -name "*.pem" -exec sh -c \
+        'cp "$1" "/usr/local/share/ca-certificates/custom/$(basename "$1")"' _ {} \; \
+    && find /usr/local/share/ca-certificates/custom -name "*.pem" -exec sh -c \
+        'cp "$1" "/usr/local/share/ca-certificates/$(basename "$1" .pem).crt"' _ {} \; \
+    && update-ca-certificates \
+    && rm -rf /tmp/certs
 
 # Install Nuclei vulnerability scanner
 ARG NUCLEI_VERSION=3.3.7

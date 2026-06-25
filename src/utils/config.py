@@ -104,6 +104,10 @@ class Settings(BaseSettings):
     environment: str = Field(
         default="development", description="Environment (development/test/production)"
     )
+    handoff_pause_seconds: float = Field(
+        default=3.0,
+        description="Seconds between outgoing and incoming handoff messages in #agent-chat",
+    )
 
     # =========================================================================
     # Rate Limiting

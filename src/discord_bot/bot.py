@@ -23,10 +23,13 @@ from .embeds import (
     create_status_embed,
 )
 from .validators import validate_command, validate_target
-from .agent_bots import send_as_randy
+from .agent_bots import send_as_randy, get_agent_manager
 from .scope_cache import get_scope_cache
 from .webhooks import post_alert
 from .casual_chat import handle_human_message
+from .mention_router import route_mentions
+from .handoffs import HandoffContext, run_handoff
+from src.agents import AGENT_RANDY_RECON, AGENT_VICTOR_VULN, AGENT_IVY_INTEL
 
 logger = get_logger(__name__)
 
@@ -86,13 +89,27 @@ class AMCorpBot(commands.Bot):
 
     async def on_message(self, message: discord.Message) -> None:
         """Handle incoming messages."""
-        # Ignore messages from bots (including ourselves)
+        # Ignore messages from bots (including ourselves) — loop prevention
         if message.author.bot:
+            return
+
+        channel_id = str(message.channel.id)
+
+        # Check for @mentions of specific agents (any watched channel)
+        mention_handled = await route_mentions(
+            message_content=message.content,
+            author_display=str(message.author.display_name),
+            author_id=str(message.author.id),
+            channel_id=channel_id,
+            active_job=self.active_job,
+            agent_manager=get_agent_manager(),
+        )
+        if mention_handled:
             return
 
         # Check for messages in #general channel (human interaction with agents)
         general_channel_id = settings.discord_channel_general
-        if general_channel_id and str(message.channel.id) == general_channel_id:
+        if general_channel_id and channel_id == general_channel_id:
             # Human message in general chat - trigger agent response
             logger.debug(
                 "Human message in general",
@@ -257,14 +274,22 @@ class AMCorpBot(commands.Bot):
                 self.active_job["findings"]["recon"] = recon_result.raw_findings
                 
                 if scan_type == "full":
+                    # Handoff conversation: Randy → Victor
+                    ports = recon_result.raw_findings.get("ports", [])
+                    await run_handoff(HandoffContext(
+                        from_agent=AGENT_RANDY_RECON,
+                        to_agent=AGENT_VICTOR_VULN,
+                        target=target,
+                        summary={"port_count": len(ports), "ports": ports[:5]},
+                    ))
+
                     # Chain to Victor for vulnerability scanning
                     self.active_job["phase"] = "vuln"
-                    
+
                     from src.agents.victor_vuln import get_victor
                     victor = get_victor()
-                    
+
                     # Pass open ports from recon to Victor
-                    ports = recon_result.raw_findings.get("ports", [])
                     vuln_result = await victor.run_vuln_scan(target, ports=ports, verbose=verbose)
                     
                     self.active_job["findings"]["vuln"] = {
@@ -277,11 +302,25 @@ class AMCorpBot(commands.Bot):
                     
                     # Chain to Ivy for threat intelligence enrichment
                     if vuln_result.all_findings:
+                        # Handoff conversation: Victor → Ivy
+                        await run_handoff(HandoffContext(
+                            from_agent=AGENT_VICTOR_VULN,
+                            to_agent=AGENT_IVY_INTEL,
+                            target=target,
+                            summary={
+                                "critical": vuln_result.critical_count,
+                                "high": vuln_result.high_count,
+                                "cve_count": len([
+                                    f for f in vuln_result.all_findings if f.get("cve_id")
+                                ]),
+                            },
+                        ))
+
                         self.active_job["phase"] = "intel"
-                        
+
                         from src.agents.ivy_intel import get_ivy
                         ivy = get_ivy()
-                        
+
                         # Pass Victor's findings to Ivy for enrichment
                         intel_result = await ivy.run_intel(
                             target=target,

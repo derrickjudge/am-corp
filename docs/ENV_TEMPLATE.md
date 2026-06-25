@@ -1,26 +1,70 @@
 # Environment Configuration Template
 
-Copy the contents below to a `.env` file in the project root.
+Copy the contents of the code block below into a `.env` file in the project root, then fill in your values.
 
-**⚠️ NEVER commit your `.env` file to version control!**
+**Never commit `.env` to version control.**
+
+The canonical reference for all variables, their types, and defaults is `src/utils/config.py`.
 
 ---
 
+## Required Variables
+
+These must be set before the bot will start.
+
+| Variable | Description |
+|----------|-------------|
+| `DISCORD_BOT_TOKEN` | Main bot token (command handler) |
+| `DISCORD_GUILD_ID` | Your Discord server ID |
+| `DISCORD_CHANNEL_*` | Six channel IDs (see template) |
+| `DISCORD_WEBHOOK_*` | Five webhook URLs (see template) |
+| `GEMINI_API_KEY` | Google Gemini API key — free tier at aistudio.google.com |
+
+## Optional Variables
+
+These enable additional capabilities. The bot degrades gracefully without them.
+
+| Variable | Enables |
+|----------|---------|
+| `DISCORD_BOT_TOKEN_RANDY/VICTOR/IVY/RITA` | Multi-bot mode (each agent appears as its own Discord user) |
+| `DISCORD_CHANNEL_DEBUG` + `DEBUG_CHANNEL_ENABLED` | Debug output channel |
+| `SHODAN_API_KEY` | Ivy Intel's host search capability |
+| `VIRUSTOTAL_API_KEY` | Ivy Intel's malware/URL analysis |
+| `SECURITYTRAILS_API_KEY` | Ivy Intel's DNS intelligence |
+| `N8N_API_KEY` | n8n workflow automation (Phase 4, currently scaffolded) |
+
+---
+
+## Getting API Keys
+
+| Service | Where |
+|---------|-------|
+| Discord Bot Token | discord.com/developers/applications → Bot → Reset Token |
+| Discord Channel/Guild IDs | Right-click channel or server → Copy ID (enable Developer Mode first) |
+| Discord Webhooks | Channel Settings → Integrations → Webhooks → New Webhook |
+| Gemini API Key | aistudio.google.com → Get API Key |
+| Shodan | account.shodan.io |
+| VirusTotal | virustotal.com → My API Key |
+
+---
+
+## Template
+
 ```bash
 # AM-Corp Environment Configuration
-# Copy this content to .env in the project root
-# NEVER commit .env to version control
+# Copy to .env in the project root — never commit this file
 
 # =============================================================================
-# DISCORD CONFIGURATION
+# DISCORD — REQUIRED
 # =============================================================================
-# Bot token from Discord Developer Portal
+# Main bot token (from Discord Developer Portal → Bot)
 DISCORD_BOT_TOKEN=
 
 # Your Discord server (guild) ID
 DISCORD_GUILD_ID=
 
-# Channel IDs (right-click channel → Copy Channel ID)
+# Channel IDs
+# Right-click each channel → Copy Channel ID (requires Developer Mode)
 DISCORD_CHANNEL_COMMANDS=
 DISCORD_CHANNEL_AGENT_CHAT=
 DISCORD_CHANNEL_RESULTS=
@@ -28,160 +72,137 @@ DISCORD_CHANNEL_ALERTS=
 DISCORD_CHANNEL_THOUGHTS=
 DISCORD_CHANNEL_GENERAL=
 
-# Webhook URLs (create webhook in each channel: Edit Channel → Integrations → Webhooks)
-# Agent chat webhook - for agent reasoning and status updates
+# Webhook URLs
+# Channel Settings → Integrations → Webhooks → New Webhook → Copy URL
 DISCORD_WEBHOOK_AGENT_CHAT=
-
-# Results webhook - for final scan outputs
 DISCORD_WEBHOOK_RESULTS=
-
-# Alerts webhook - for errors and warnings
 DISCORD_WEBHOOK_ALERTS=
-
-# Thoughts webhook - for agent reasoning transparency
 DISCORD_WEBHOOK_THOUGHTS=
-
-# General webhook - for casual team conversation
 DISCORD_WEBHOOK_GENERAL=
 
 # =============================================================================
-# LLM CONFIGURATION
+# DISCORD — OPTIONAL: Multi-bot mode
+# Each agent appears as its own Discord user instead of one shared bot.
+# Leave blank to run all agents under DISCORD_BOT_TOKEN.
 # =============================================================================
-# Gemini API key from Google AI Studio
-GEMINI_API_KEY=
+DISCORD_BOT_TOKEN_RANDY=
+DISCORD_BOT_TOKEN_VICTOR=
+DISCORD_BOT_TOKEN_IVY=
+DISCORD_BOT_TOKEN_RITA=
 
-# Model selection (default: gemini-2.5-flash)
+# =============================================================================
+# DISCORD — OPTIONAL: Debug channel
+# =============================================================================
+DISCORD_CHANNEL_DEBUG=
+DEBUG_CHANNEL_ENABLED=false
+
+# =============================================================================
+# LLM — REQUIRED
+# Free tier limits: 15 RPM, 1,500 RPD, 1M TPM
+# =============================================================================
+GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.5-flash
 
 # =============================================================================
-# N8N CONFIGURATION
+# EXTERNAL APIs — OPTIONAL
+# Ivy Intel degrades gracefully without these.
 # =============================================================================
-# n8n instance URL
-N8N_BASE_URL=http://localhost:5678
-
-# n8n API key (generate in n8n settings)
-N8N_API_KEY=
-
-# =============================================================================
-# EXTERNAL APIS (OPTIONAL)
-# =============================================================================
-# Shodan API key for enhanced reconnaissance
 SHODAN_API_KEY=
-
-# VirusTotal API key for threat intelligence
 VIRUSTOTAL_API_KEY=
-
-# SecurityTrails API key for DNS intelligence
 SECURITYTRAILS_API_KEY=
 
 # =============================================================================
-# APPLICATION SETTINGS
+# N8N — OPTIONAL (Phase 4, currently scaffolded but not fully tested)
 # =============================================================================
-# Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
-LOG_LEVEL=INFO
+N8N_BASE_URL=http://localhost:5678
+N8N_API_KEY=
+N8N_DATA_PATH=./data/n8n
+N8N_USER=admin
+N8N_PASSWORD=
 
-# Log file path
+# =============================================================================
+# LOGGING
+# =============================================================================
+# Levels: DEBUG, INFO, WARNING, ERROR, CRITICAL
+LOG_LEVEL=INFO
 LOG_FILE=logs/am-corp.log
 
-# Environment: development, test, production
+# =============================================================================
+# ENVIRONMENT
+# Values: development, test, production
+# docker-compose.yml forces this to production at runtime.
+# =============================================================================
 ENVIRONMENT=development
+
+# =============================================================================
+# AGENT HANDOFFS
+# Seconds between outgoing and incoming handoff messages in #agent-chat.
+# Increase for more dramatic pacing, decrease to speed up the scan pipeline.
+# =============================================================================
+HANDOFF_PAUSE_SECONDS=3.0
 
 # =============================================================================
 # RATE LIMITING
 # =============================================================================
-# Maximum concurrent scans
 MAX_CONCURRENT_SCANS=1
-
-# API rate limit (requests per window)
 RATE_LIMIT_REQUESTS=100
-
-# Rate limit window in seconds
 RATE_LIMIT_WINDOW=3600
 
 # =============================================================================
-# SECURITY SETTINGS
+# SECURITY — Keep ENABLE_SCOPE_VERIFICATION=true on any real network.
+# .gov and .mil are hardcoded-blocked regardless of this setting.
 # =============================================================================
-# Enable scope verification (recommended: true)
 ENABLE_SCOPE_VERIFICATION=true
-
-# Allowed target domains (comma-separated, empty = manual approval required)
+# Comma-separated pre-approved domains. Empty = manual approval required each time.
 ALLOWED_TARGETS=
-
-# Enable audit logging
 ENABLE_AUDIT_LOG=true
-
-# Audit log file path
 AUDIT_LOG_FILE=logs/audit.log
 
 # =============================================================================
-# THOUGHTS CHANNEL SETTINGS
+# THOUGHTS CHANNEL
+# Verbosity levels: minimal | normal | verbose | all
 # =============================================================================
-# Enable thoughts channel for agent reasoning transparency
 THOUGHTS_CHANNEL_ENABLED=true
-
-# Verbosity level: minimal, normal, verbose, all
-# - minimal: Major decisions only
-# - normal: Key reasoning steps (default)
-# - verbose: Everything including uncertainties
-# - all: Full stream of consciousness
 THOUGHTS_VERBOSITY=normal
 
 # =============================================================================
 # PERSONALITY SYSTEM
 # =============================================================================
-# Directory for personality YAML files
 PERSONALITY_DIR=config/personalities
-
-# Enable personality evolution based on experiences
 PERSONALITY_EVOLUTION_ENABLED=true
 
 # =============================================================================
-# CASUAL CHAT (GENERAL CHANNEL)
+# CASUAL CHAT
+# Agents periodically discuss security topics in #general
 # =============================================================================
-# Enable casual chat in #am-corp-general channel
-# Agents will periodically chat about security topics based on their personality
 CASUAL_CHAT_ENABLED=true
 
 # =============================================================================
-# DOCKER CONFIGURATION (used by docker-compose)
+# TIMEZONE
 # =============================================================================
-# n8n data persistence path
-N8N_DATA_PATH=./data/n8n
-
-# n8n authentication
-N8N_USER=admin
-N8N_PASSWORD=
-
-# Timezone
 TZ=UTC
 ```
 
 ---
 
-## How to Use
+## Setup Steps
 
-1. Create a `.env` file in the project root:
+1. Create the file:
    ```bash
+   cp docs/ENV_TEMPLATE.md /dev/null   # template is docs-only
    touch .env
    ```
+   Or copy the block above directly into `.env`.
 
-2. Copy the template above into the file
+2. Fill in all **Required** values at minimum.
 
-3. Fill in your values
-
-4. Verify `.env` is in `.gitignore`:
+3. Confirm `.env` is ignored:
    ```bash
-   echo ".env" >> .gitignore
+   grep '\.env' .gitignore
    ```
 
----
-
-## Getting API Keys
-
-| Service | Where to Get |
-|---------|--------------|
-| Discord Bot Token | [Discord Developer Portal](https://discord.com/developers/applications) |
-| Gemini API Key | [Google AI Studio](https://aistudio.google.com/app/apikey) |
-| Shodan API Key | [Shodan Account](https://account.shodan.io/) |
-| VirusTotal API Key | [VirusTotal API](https://www.virustotal.com/gui/my-apikey) |
-
+4. Run preflight to validate before starting:
+   ```bash
+   podman-compose build
+   podman exec am-corp-bot python src/preflight.py --quick
+   ```
