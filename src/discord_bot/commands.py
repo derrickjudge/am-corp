@@ -181,17 +181,47 @@ async def setup_commands(bot: commands.Bot) -> None:
 
     @bot.command(name="report")
     async def report_command(ctx: commands.Context) -> None:
-        """Generate a report from current findings."""
-        if not bot.active_job:
+        """Generate a Rita Report from the last completed scan."""
+        if bot.active_job:
             await ctx.send(
                 embed=create_error_embed(
-                    "No Findings",
-                    "No active job or findings to report on. Run a scan first.",
+                    "Scan In Progress",
+                    f"A scan is currently running (phase: {bot.active_job.get('phase', '?')}). "
+                    "Wait for it to finish, then run `!report`.",
                 )
             )
             return
 
-        await ctx.send("📊 Report generation is not yet implemented. Coming soon!")
+        if not bot.last_scan_results:
+            await ctx.send(
+                embed=create_error_embed(
+                    "No Findings",
+                    "No completed scan found. Run `!scan <target>` first.",
+                )
+            )
+            return
+
+        await ctx.send("📊 Rita is compiling the report…")
+
+        from src.agents.rita_report import get_rita
+        from src.discord_bot.bot import _post_report_to_results
+
+        stored = bot.last_scan_results
+        rita = get_rita()
+        report_result = await rita.run_report(
+            target=stored["target"],
+            recon_result=stored.get("recon"),
+            vuln_result=stored.get("vuln"),
+            intel_result=stored.get("intel"),
+        )
+        await _post_report_to_results(report_result)
+
+        audit_log(
+            action="report_generated",
+            user=str(ctx.author),
+            target=stored["target"],
+            result="success",
+        )
 
     @bot.command(name="ping")
     async def ping_command(ctx: commands.Context) -> None:

@@ -437,7 +437,7 @@ class IvyIntelAgent:
         # Check for patterns that trigger Ivy's specific evolution
         if result.cve_enrichments:
             # Look for high-EPSS CVEs (actively exploited)
-            high_epss = [c for c in result.cve_enrichments if c.get("epss", 0) > 0.5]
+            high_epss = [c for c in result.cve_enrichments if (c.epss_score or 0) > 0.5]
             if high_epss:
                 evolution_context["apt_connection_found"] = True
         

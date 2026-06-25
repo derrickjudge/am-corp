@@ -58,7 +58,7 @@ fi
 
 if [ "$CONTAINERS" != "0" ]; then
     echo "⚠️  WARNING: Found $CONTAINERS am-corp containers still running"
-    podman ps -a | grep am-corp
+    podman ps -a | grep am-corp || true
 fi
 
 echo "   ✅ Host processes: 0"

@@ -7,6 +7,7 @@ and coordinates agent responses.
 
 import asyncio
 from datetime import datetime, timezone
+from typing import Any
 
 import discord
 from discord.ext import commands
@@ -19,19 +20,67 @@ from .embeds import (
     create_blocked_embed,
     create_error_embed,
     create_help_embed,
+    create_report_findings_embed,
+    create_report_header_embed,
+    create_report_intel_embed,
+    create_report_priorities_embed,
+    create_report_summary_embed,
     create_scope_confirmation_embed,
     create_status_embed,
 )
 from .validators import validate_command, validate_target
 from .agent_bots import send_as_randy, get_agent_manager
 from .scope_cache import get_scope_cache
-from .webhooks import post_alert
+from .webhooks import post_alert, get_webhook_client
 from .casual_chat import handle_human_message
 from .mention_router import route_mentions
 from .handoffs import HandoffContext, run_handoff
 from src.agents import AGENT_RANDY_RECON, AGENT_VICTOR_VULN, AGENT_IVY_INTEL
 
 logger = get_logger(__name__)
+
+
+async def _post_report_to_results(report: "Any") -> None:
+    """Post Rita's report as a series of embeds to the results webhook."""
+    from src.agents.rita_report import ReportResult
+
+    if not isinstance(report, ReportResult):
+        return
+
+    client = get_webhook_client()
+    webhook_url = client.webhooks.get("results")
+    if not webhook_url:
+        logger.error("No results webhook configured — cannot post report")
+        return
+
+    embeds_to_post = [
+        create_report_header_embed(report.target, report.overall_risk, report.scan_timestamp),
+        create_report_summary_embed(report.executive_summary),
+        create_report_findings_embed(report.vuln_counts, report.open_ports),
+    ]
+
+    if report.risk_items:
+        embeds_to_post.append(create_report_priorities_embed(report.risk_items))
+
+    if report.intel_highlights or report.shodan_exposure or report.virustotal_status:
+        embeds_to_post.append(
+            create_report_intel_embed(
+                report.intel_highlights, report.shodan_exposure, report.virustotal_status
+            )
+        )
+
+    # Discord allows max 10 embeds per message; split if needed
+    import httpx
+    chunk_size = 10
+    for i in range(0, len(embeds_to_post), chunk_size):
+        chunk = embeds_to_post[i : i + chunk_size]
+        payload = {"embeds": [e.to_dict() for e in chunk]}
+        try:
+            async with httpx.AsyncClient() as http:
+                resp = await http.post(webhook_url, json=payload)
+                resp.raise_for_status()
+        except httpx.HTTPError as e:
+            logger.error("Failed to post report to results", error=str(e))
 
 
 class AMCorpBot(commands.Bot):
@@ -52,6 +101,7 @@ class AMCorpBot(commands.Bot):
 
         self.commands_channel_id = int(settings.discord_channel_commands) if settings.discord_channel_commands else None
         self.active_job: dict | None = None
+        self.last_scan_results: dict | None = None  # persists after active_job clears
         self.pending_confirmations: dict[int, dict] = {}  # message_id -> job info
 
     async def setup_hook(self) -> None:
@@ -262,17 +312,19 @@ class AMCorpBot(commands.Bot):
 
         try:
             recon_result = None
-            
+            vuln_result = None
+            intel_result = None
+
             if scan_type in ("recon", "full"):
                 # Run Randy's reconnaissance
                 self.active_job["phase"] = "recon"
-                
+
                 from src.agents.randy_recon import run_recon
                 recon_result = await run_recon(target, verbose=verbose)
-                
+
                 # Store findings
                 self.active_job["findings"]["recon"] = recon_result.raw_findings
-                
+
                 if scan_type == "full":
                     # Handoff conversation: Randy → Victor
                     ports = recon_result.raw_findings.get("ports", [])
@@ -291,7 +343,7 @@ class AMCorpBot(commands.Bot):
 
                     # Pass open ports from recon to Victor
                     vuln_result = await victor.run_vuln_scan(target, ports=ports, verbose=verbose)
-                    
+
                     self.active_job["findings"]["vuln"] = {
                         "critical": vuln_result.critical_count,
                         "high": vuln_result.high_count,
@@ -299,7 +351,7 @@ class AMCorpBot(commands.Bot):
                         "low": vuln_result.low_count,
                         "total": len(vuln_result.all_findings),
                     }
-                    
+
                     # Chain to Ivy for threat intelligence enrichment
                     if vuln_result.all_findings:
                         # Handoff conversation: Victor → Ivy
@@ -327,21 +379,33 @@ class AMCorpBot(commands.Bot):
                             vuln_findings=vuln_result.all_findings,
                             verbose=verbose,
                         )
-                        
+
                         self.active_job["findings"]["intel"] = {
                             "cves_enriched": len(intel_result.cve_enrichments),
                             "shodan_available": intel_result.shodan_result is not None,
                             "virustotal_available": intel_result.virustotal_result is not None,
                         }
-            
+
+                    # Rita compiles the final report and posts to #results
+                    self.active_job["phase"] = "report"
+                    from src.agents.rita_report import get_rita
+                    rita = get_rita()
+                    report_result = await rita.run_report(
+                        target=target,
+                        recon_result=recon_result,
+                        vuln_result=vuln_result,
+                        intel_result=intel_result,
+                    )
+                    await _post_report_to_results(report_result)
+
             elif scan_type == "vuln":
                 # Run Victor's vulnerability scan directly
                 self.active_job["phase"] = "vuln"
-                
+
                 from src.agents.victor_vuln import get_victor
                 victor = get_victor()
                 vuln_result = await victor.run_vuln_scan(target, verbose=verbose)
-                
+
                 self.active_job["findings"]["vuln"] = {
                     "critical": vuln_result.critical_count,
                     "high": vuln_result.high_count,
@@ -349,15 +413,24 @@ class AMCorpBot(commands.Bot):
                     "low": vuln_result.low_count,
                     "total": len(vuln_result.all_findings),
                 }
-            
+
             elif scan_type == "intel":
                 # Run Ivy's intelligence gathering directly
                 self.active_job["phase"] = "intel"
-                
+
                 from src.agents.ivy_intel import get_ivy
                 ivy = get_ivy()
                 intel_result = await ivy.run_intel(target=target, verbose=verbose)
-            
+
+            # Persist results for !report even after job clears
+            self.last_scan_results = {
+                "target": target,
+                "scan_type": scan_type,
+                "recon": recon_result,
+                "vuln": vuln_result,
+                "intel": intel_result,
+            }
+
             # Job completed successfully - clear active job
             self.active_job = None
             

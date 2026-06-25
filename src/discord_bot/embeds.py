@@ -624,38 +624,214 @@ def create_rita_config_embed() -> discord.Embed:
         color=Colors.REPORT,
         timestamp=datetime.now(timezone.utc),
     )
-    
+
     embed.add_field(
         name="Status",
-        value="⏳ **Not Yet Implemented**",
+        value="✅ **Active**",
         inline=False,
     )
-    
+
     embed.add_field(
-        name="Planned Tools",
+        name="Report Structure",
         value=(
-            "• `template_renderer` - Markdown/PDF generation\n"
-            "• `chart_generator` - Visualization creation\n"
-            "• `summary_writer` - Executive summary generation"
+            "1. Executive Summary (Gemini-generated)\n"
+            "2. Risk Overview (severity counts, overall rating)\n"
+            "3. Priority Findings (top CVEs + nuclei findings)\n"
+            "4. Intel Context (Shodan exposure, VirusTotal)\n"
+            "5. Recommendations"
         ),
         inline=False,
     )
-    
+
     embed.add_field(
-        name="Planned Report Structure",
-        value=(
-            "1. Executive Summary\n"
-            "2. Scope and Methodology\n"
-            "3. Key Findings (prioritized)\n"
-            "4. Technical Details\n"
-            "5. Remediation Roadmap\n"
-            "6. Appendices"
-        ),
+        name="Trigger",
+        value="`!report` after any scan, or auto-runs at end of `!scan`",
         inline=False,
     )
-    
+
     embed.set_footer(text="Rita Report")
-    
+
+    return embed
+
+
+def create_report_header_embed(
+    target: str,
+    overall_risk: str,
+    scan_timestamp: str,
+) -> discord.Embed:
+    """Create the header embed for a Rita security report."""
+    risk_colors = {
+        "CRITICAL": 0x9B0000,
+        "HIGH": Colors.ERROR,
+        "MEDIUM": Colors.WARNING,
+        "LOW": Colors.INFO,
+        "CLEAN": Colors.SUCCESS,
+    }
+    risk_emojis = {
+        "CRITICAL": "🔴",
+        "HIGH": "🟠",
+        "MEDIUM": "🟡",
+        "LOW": "🔵",
+        "CLEAN": "🟢",
+    }
+    color = risk_colors.get(overall_risk, Colors.WARNING)
+    emoji = risk_emojis.get(overall_risk, "⚪")
+
+    embed = discord.Embed(
+        title=f"📊 Security Assessment Report",
+        description=f"Target: `{target}`",
+        color=color,
+        timestamp=datetime.now(timezone.utc),
+    )
+
+    embed.add_field(
+        name="Overall Risk",
+        value=f"{emoji} **{overall_risk}**",
+        inline=True,
+    )
+
+    embed.add_field(
+        name="Scan Completed",
+        value=scan_timestamp[:19].replace("T", " ") + " UTC",
+        inline=True,
+    )
+
+    embed.set_footer(text="Rita Report  •  AM-Corp Security Team")
+
+    return embed
+
+
+def create_report_summary_embed(executive_summary: str) -> discord.Embed:
+    """Create the executive summary embed."""
+    embed = discord.Embed(
+        title="Executive Summary",
+        description=executive_summary,
+        color=Colors.REPORT,
+        timestamp=datetime.now(timezone.utc),
+    )
+    embed.set_footer(text="Rita Report")
+    return embed
+
+
+def create_report_findings_embed(
+    vuln_counts: dict[str, int],
+    open_ports: list[dict],
+) -> discord.Embed:
+    """Create the technical findings overview embed."""
+    embed = discord.Embed(
+        title="Technical Findings",
+        color=Colors.VULN,
+        timestamp=datetime.now(timezone.utc),
+    )
+
+    if vuln_counts:
+        severity_lines = []
+        if vuln_counts.get("critical", 0):
+            severity_lines.append(f"🔴 Critical: **{vuln_counts['critical']}**")
+        if vuln_counts.get("high", 0):
+            severity_lines.append(f"🟠 High: **{vuln_counts['high']}**")
+        if vuln_counts.get("medium", 0):
+            severity_lines.append(f"🟡 Medium: **{vuln_counts['medium']}**")
+        if vuln_counts.get("low", 0):
+            severity_lines.append(f"🔵 Low: **{vuln_counts['low']}**")
+        if not severity_lines:
+            severity_lines = ["🟢 No findings detected"]
+
+        embed.add_field(
+            name="Vulnerability Counts",
+            value="\n".join(severity_lines),
+            inline=True,
+        )
+
+    if open_ports:
+        port_lines = []
+        for p in open_ports[:8]:
+            port_num = p.get("port", "?")
+            service = p.get("service", p.get("name", "unknown"))
+            version = p.get("version", "")
+            line = f"`{port_num}` {service}"
+            if version:
+                line += f" {version[:20]}"
+            port_lines.append(line)
+        if len(open_ports) > 8:
+            port_lines.append(f"*…and {len(open_ports) - 8} more*")
+
+        embed.add_field(
+            name=f"Open Ports ({len(open_ports)} total)",
+            value="\n".join(port_lines) or "None identified",
+            inline=True,
+        )
+    else:
+        embed.add_field(name="Open Ports", value="No recon data", inline=True)
+
+    embed.set_footer(text="Victor Vuln  •  Randy Recon")
+    return embed
+
+
+def create_report_priorities_embed(risk_items: list) -> discord.Embed:
+    """Create the priority findings embed."""
+    embed = discord.Embed(
+        title="Priority Remediation Items",
+        color=Colors.ERROR,
+        timestamp=datetime.now(timezone.utc),
+    )
+
+    if not risk_items:
+        embed.description = "No critical or high findings to prioritize."
+        embed.color = Colors.SUCCESS
+        embed.set_footer(text="Rita Report")
+        return embed
+
+    for item in risk_items[:5]:
+        epss_str = f" | EPSS {item.epss*100:.1f}%" if item.epss is not None else ""
+        cvss_str = f" | CVSS {item.cvss:.1f}" if item.cvss is not None else ""
+        cve_str = f"[{item.cve_id}](https://nvd.nist.gov/vuln/detail/{item.cve_id})" if item.cve_id else ""
+
+        header = f"#{item.priority} [{item.severity}]{cvss_str}{epss_str}"
+        body_lines = []
+        if cve_str:
+            body_lines.append(cve_str)
+        if item.description:
+            body_lines.append(item.description[:120])
+        body_lines.append(f"**Action:** {item.recommendation}")
+
+        embed.add_field(
+            name=f"{header}  —  {item.title[:40]}",
+            value="\n".join(body_lines),
+            inline=False,
+        )
+
+    embed.set_footer(text="Rita Report  •  Ivy Intel")
+    return embed
+
+
+def create_report_intel_embed(
+    intel_highlights: list[str],
+    shodan_exposure: str,
+    virustotal_status: str,
+) -> discord.Embed:
+    """Create the intel context embed."""
+    embed = discord.Embed(
+        title="Threat Intelligence Context",
+        color=Colors.INTEL,
+        timestamp=datetime.now(timezone.utc),
+    )
+
+    if shodan_exposure:
+        embed.add_field(name="Shodan Exposure", value=shodan_exposure, inline=True)
+    if virustotal_status:
+        embed.add_field(name="VirusTotal", value=virustotal_status, inline=True)
+
+    if intel_highlights:
+        embed.add_field(
+            name="Key Intel Findings",
+            value="\n".join(f"• {h}" for h in intel_highlights),
+            inline=False,
+        )
+    elif not shodan_exposure and not virustotal_status:
+        embed.description = "No threat intelligence data available (Shodan/VirusTotal API keys not configured)."
+
+    embed.set_footer(text="Ivy Intel")
     return embed
 
 
