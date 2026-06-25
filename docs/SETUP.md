@@ -28,10 +28,11 @@ cp .env.example .env
 # 3. Configure environment variables (see below)
 nano .env
 
-# 4. Install Python dependencies (includes podman-compose)
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
+# 4. Install Python dependencies with uv (creates .venv from the lockfile)
+#    Install uv first if needed: https://docs.astral.sh/uv/getting-started/
+uv sync                   # runtime deps
+uv sync --group dev       # include dev tools (pytest, ruff, mypy)
+#    podman-compose is a host tool — install separately: brew install podman-compose
 
 # 5. Build and start with Podman
 podman-compose build
@@ -161,7 +162,8 @@ am-corp/
 ├── .env.example          # Environment template
 ├── .env                   # Local environment (git-ignored)
 ├── docker-compose.yml     # Docker services
-├── requirements.txt       # Python dependencies
+├── pyproject.toml         # Python dependencies + tooling (uv)
+├── uv.lock                # Pinned lockfile
 ├── docs/
 │   ├── am-corp_PRD.md    # Product Requirements
 │   ├── ARCHITECTURE.md    # System architecture

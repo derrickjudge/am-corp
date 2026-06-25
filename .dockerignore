@@ -35,7 +35,6 @@ htmlcov/
 # Documentation (not needed in container)
 docs/
 *.md
-!requirements.txt
 
 # Build artifacts
 *.egg-info/

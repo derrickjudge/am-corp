@@ -168,9 +168,12 @@ RUN apt-get update && apt-get install -y wget \
     && rm /tmp/nuclei.zip \
     && nuclei -update-templates
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies with uv (from the pinned lockfile)
+COPY pyproject.toml uv.lock ./
+RUN pip install --no-cache-dir --upgrade pip uv \
+    && uv export --frozen --no-dev --no-emit-project -o /tmp/requirements.lock \
+    && uv pip install --system --no-cache -r /tmp/requirements.lock \
+    && rm /tmp/requirements.lock
 
 # Copy application
 COPY src/ ./src/

@@ -70,11 +70,15 @@ RUN ARCH=$(case ${TARGETARCH} in \
 # Set working directory
 WORKDIR /app
 
-# Copy requirements first for layer caching
-COPY requirements.txt .
+# Copy dependency manifests first for layer caching
+COPY pyproject.toml uv.lock ./
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install uv + refresh pip (clears known pip CVEs), then install the exact
+# locked dependency set into the system environment (no venv, reproducible).
+RUN pip install --no-cache-dir --upgrade pip uv \
+    && uv export --frozen --no-dev --no-emit-project -o /tmp/requirements.lock \
+    && uv pip install --system --no-cache -r /tmp/requirements.lock \
+    && rm /tmp/requirements.lock
 
 # Copy application code
 COPY src/ ./src/

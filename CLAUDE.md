@@ -35,7 +35,8 @@ am-corp/
 ├── .env.example                   # Template for .env
 ├── Dockerfile                     # python:3.12-slim, non-root user `amcorp` (UID 1000)
 ├── docker-compose.yml             # Single service: am-corp-bot
-├── requirements.txt               # Python deps
+├── pyproject.toml                 # Python deps + tooling config (managed by uv)
+├── uv.lock                        # Pinned lockfile — reproducible builds
 ├── config/
 │   ├── personalities/             # Agent YAML state — persisted across restarts
 │   │   ├── randy_recon.yaml

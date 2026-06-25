@@ -1,0 +1,61 @@
+[project]
+name = "am-corp"
+version = "0.1.0"
+description = "Multi-agent cybersecurity automation platform (Discord)"
+# CrewAI does not support Python 3.14 yet; container targets 3.12.
+requires-python = ">=3.10,<3.14"
+
+dependencies = [
+    # Agent orchestration (intended layer — see ADR-001; kept for integration)
+    "crewai>=1.14,<2",
+    "crewai-tools>=1.14,<2",
+    # LLM
+    "google-genai>=2.10,<3",
+    # Discord
+    "discord.py>=2.7,<3",
+    # HTTP / async
+    "aiohttp>=3.14,<4",
+    "httpx>=0.28,<1",
+    # Config & environment (python-dotenv backs pydantic-settings' env_file loading)
+    "pydantic>=2.12,<3",
+    "pydantic-settings>=2.10,<3",
+    "python-dotenv>=1.0,<2",
+    # Serialization (imported by src/agents/personality.py — previously transitive-only)
+    "pyyaml>=6,<7",
+    # Logging
+    "structlog>=26,<27",
+    "rich>=14,<15",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8,<9",
+    "pytest-asyncio>=0.23,<1",
+    "pytest-cov>=4,<7",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+# This is a runnable application, not a distributable package — don't build/install it.
+[tool.uv]
+package = false
+
+# =============================================================================
+# Tooling (mandated by CLAUDE.md: Ruff + mypy + pytest)
+# =============================================================================
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_unused_ignores = true
+warn_redundant_casts = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
