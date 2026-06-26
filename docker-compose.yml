@@ -38,7 +38,7 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./config/personalities:/app/config/personalities
-      - nuclei-templates:/app/nuclei-templates
+      - nuclei-templates:/home/amcorp/nuclei-templates
     
     # Resource limits
     deploy:

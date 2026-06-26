@@ -53,7 +53,7 @@ RUN mkdir -p /usr/local/share/ca-certificates/custom/ \
     && rm -rf /tmp/certs
 
 # Install Nuclei vulnerability scanner
-ARG NUCLEI_VERSION=3.3.7
+ARG NUCLEI_VERSION=3.9.0
 ARG TARGETARCH
 RUN ARCH=$(case ${TARGETARCH} in \
         amd64) echo "amd64" ;; \

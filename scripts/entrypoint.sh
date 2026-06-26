@@ -29,6 +29,10 @@ else
 fi
 
 echo ""
+echo "🔄 Updating Nuclei templates..."
+nuclei -ut -silent 2>&1 | tail -2 || echo "   Template update failed (continuing anyway)"
+
+echo ""
 echo "🚀 Starting AM-Corp Bot..."
 echo ""
 
