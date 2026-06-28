@@ -108,6 +108,10 @@ class Settings(BaseSettings):
         default=3.0,
         description="Seconds between outgoing and incoming handoff messages in #agent-chat",
     )
+    use_crewai: bool = Field(
+        default=False,
+        description="Route scans through CrewAI agents instead of the hand-rolled pipeline",
+    )
 
     # =========================================================================
     # Rate Limiting

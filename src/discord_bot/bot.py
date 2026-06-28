@@ -319,8 +319,12 @@ class AMCorpBot(commands.Bot):
                 # Run Randy's reconnaissance
                 self.active_job["phase"] = "recon"
 
-                from src.agents.randy_recon import run_recon
-                recon_result = await run_recon(target, verbose=verbose)
+                if settings.use_crewai:
+                    from src.crew.run import run_crew_recon
+                    recon_result = await run_crew_recon(target, verbose=verbose)
+                else:
+                    from src.agents.randy_recon import run_recon
+                    recon_result = await run_recon(target, verbose=verbose)
 
                 # Store findings
                 self.active_job["findings"]["recon"] = recon_result.raw_findings
