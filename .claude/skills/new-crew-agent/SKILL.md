@@ -24,6 +24,9 @@ Read these so the scaffold matches reality:
 - `src/discord_bot/handoffs.py` — `run_handoff` / `HandoffContext`.
 - The target agent's existing hand-rolled module (`src/agents/<agent>.py`) and
   its tools (`src/tools/<agent>_tools.py`) — reuse this logic, never rewrite it.
+- The project's `CLAUDE.md` — note the declared **Rigor** level. It decides
+  whether tests are required: `demo` and above require them; `poc` defers them
+  (and you must say so). am-corp is currently `demo`.
 
 Existing agent IDs: `randy_recon`, `victor_vuln`, `ivy_intel`, `rita_report`
 (see `src/agents/__init__.py`). Existing tool functions:
@@ -77,6 +80,13 @@ Generate in this order, matching Randy's structure:
    `settings.use_crewai`, exactly like the recon branch.
 6. **Handoff** — if applicable, fire `run_handoff(HandoffContext(...))` at the
    boundary (full-scan path already does Randy→Victor; add Victor→Ivy etc.).
+7. **Tests (Rigor `demo` and above)** — write pytest tests for the agent's
+   pure logic: the `<Agent>Findings` dataclass, the `do_*()` phase functions
+   with the underlying tool calls mocked, quota-error detection, and the
+   structured-message formatting. Save as a discrete file under `tests/`. Mock
+   all external dependencies. At `standard`/`production`, follow the TDD loop
+   (tests first, shown red) per the global CLAUDE.md. At `poc`, state that tests
+   are deferred.
 
 ## Step 4 — Verify (do not skip)
 
@@ -86,6 +96,7 @@ Generate in this order, matching Randy's structure:
   `podman exec am-corp-bot python -c "from src.crew import run, tools, agents"`.
 - Confirm the **degraded path**: the new run function must complete and
   produce structured findings when the LLM raises a quota error.
+- **Rigor `demo`+**: run `pytest`, `mypy`, and `ruff` and resolve failures.
 - Update the Phase Status table and Agent Roster in `CLAUDE.md`.
 - Do NOT commit unless the user asks.
 
@@ -99,3 +110,5 @@ Generate in this order, matching Randy's structure:
   personality + handoffs.
 - Reuse existing `src/tools/*` logic and the personality/evolution systems.
 - No `Any`, explicit error handling, type hints, docstrings (project CLAUDE.md).
+- Generate tests to the project's declared Rigor (`demo`+ requires them);
+  follow the TDD accountability rules in the global CLAUDE.md.

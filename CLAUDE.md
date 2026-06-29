@@ -4,7 +4,18 @@
 
 A multi-agent cybersecurity platform where AI agents (Randy, Victor, Ivy, Rita) operate as teammates in a Discord server. Agents do reconnaissance, vulnerability scanning, and threat intelligence, then collaborate through natural language discussion. Everything runs as a single Podman container locally; Discord is the only UI.
 
-**This is an interview demo project.** Prioritize working, demonstrable features over refactoring or speculative cleanup.
+**This is an interview demo project** — a portfolio-quality showcase of the work.
+
+```
+Rigor: demo         # rapid-experiment | poc | demo | standard | production
+Hosting: local      # local | personal-infra | managed-cloud
+```
+
+`demo` rigor (see global CLAUDE.md) requires: tests for core logic, mypy + ruff
+passing, and full type hints + docstrings. **Known gap to close:** the
+`src/crew/` code was built at poc speed and still needs a test suite and a
+clean mypy/ruff pass — bringing it up to demo standard is the active priority.
+New code from here should meet demo rigor.
 
 ---
 
@@ -14,7 +25,7 @@ A multi-agent cybersecurity platform where AI agents (Randy, Victor, Ivy, Rita) 
 |-------|------|-------|
 | Language | Python 3.12 | Strict typing — no `Any` |
 | Agents | CrewAI ≥0.86.0 | Multi-agent orchestration |
-| LLM | Google Gemini 2.5-flash | Free tier: 15 RPM / 1,500 RPD |
+| LLM | Google Gemini 2.5-flash-lite | Free tier ~20 requests/day (observed); paid tier or Ollama to scale — see `src/crew/llm.py` |
 | Discord | discord.py ≥2.3.0 | Bot + webhooks |
 | Container | **Podman** (NOT Docker) | macOS corporate security (Netskope) blocks Docker SSL |
 | Compose | podman-compose | Use this — never `docker-compose` |

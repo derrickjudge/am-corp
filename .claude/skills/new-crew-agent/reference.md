@@ -154,6 +154,8 @@ boundaries; data still flows via Python return values / the findings store.
       quota error or temporarily raising in kickoff).
 - [ ] #thoughts vs #agent-chat content lands in the right channel.
 - [ ] Handoff fires to the next agent with a real @mention.
+- [ ] Rigor `demo`+: pytest/mypy/ruff pass; tests cover the findings dataclass,
+      `do_*()` with tools mocked, quota detection, and message formatting.
 - [ ] `CLAUDE.md` Phase Status + Agent Roster updated.
 - [ ] No `Any`, explicit error handling, docstrings + type hints present.
 ```
