@@ -1,102 +1,93 @@
 """
-Narration bridge: CrewAI callbacks → Discord.
-
-HOW CREWAI CALLBACKS WORK:
-  CrewAI calls step_callback(step_output) after every agent reasoning
-  step. step_output is a CrewAI AgentFinish or similar object — its
-  string representation is the agent's most recent thought/action log.
-
-  task_callback(task_output) fires when a Task completes. task_output
-  contains the agent's final answer for that task.
+Narration bridge: CrewAI sync tools -> async Discord channels.
 
 WHY A QUEUE:
-  Callbacks are called synchronously from CrewAI's worker thread.
-  Discord posting is async (requires await). Bridging them directly
-  would deadlock. Instead:
-    - Callbacks push text onto an asyncio.Queue (thread-safe via
-      loop.call_soon_threadsafe).
-    - An async drainer coroutine reads from the queue and posts to
-      Discord. The drainer runs on the bot's event loop alongside
-      everything else.
+  CrewAI tools execute synchronously in a worker thread, but Discord
+  posting is async (requires await on the bot's event loop). Bridging
+  them directly would deadlock. Instead, sync code pushes typed messages
+  onto an asyncio.Queue via loop.call_soon_threadsafe, and an async
+  drainer coroutine reads them and posts to the right channel.
 
-USAGE:
-  1. Call setup_narration(loop, agent_id) before starting the crew.
-     This returns (step_cb, task_cb) to pass into the Agent.
-  2. Call start_drainer(loop) once to launch the background drainer.
-  3. The drainer runs until you call stop_drainer().
+CHANNEL CONTRACT (see CLAUDE.md):
+  - "thought"    -> #thoughts   (reasoning transparency, categorized)
+  - "agent_chat" -> #agent-chat (personality-rich conversation)
+
+  Data-driven analytical thoughts are pushed from tools (which know what
+  they found). Personality-rich agent-chat messages are posted directly
+  from run.py (which is already async) — they do not use this queue.
 """
 
 import asyncio
-from typing import Callable
+from typing import Optional
 
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 # Single shared queue for all narration messages
-_narration_queue: asyncio.Queue | None = None
-_drainer_task: asyncio.Task | None = None
+_narration_queue: "asyncio.Queue[dict] | None" = None
+_drainer_task: "asyncio.Task | None" = None
 
 
-def _get_queue() -> asyncio.Queue:
+def _get_queue() -> "asyncio.Queue[dict]":
     global _narration_queue
     if _narration_queue is None:
         _narration_queue = asyncio.Queue()
     return _narration_queue
 
 
-def setup_narration(
+def push_thought(
     loop: asyncio.AbstractEventLoop,
     agent_id: str,
-) -> tuple[Callable, Callable]:
+    text: str,
+    category: str = "reasoning",
+    confidence: Optional[float] = None,
+) -> None:
     """
-    Build the step and task callbacks for a CrewAI Agent.
+    Push a thought to #thoughts from a sync context (e.g. inside a CrewAI tool).
 
-    Returns (step_callback, task_callback) ready to be passed directly
-    into the Agent constructor.
-
-    Args:
-        loop:     The bot's running event loop.
-        agent_id: Used to label thoughts channel messages correctly.
+    Thread-safe: schedules the enqueue on the bot's event loop. Returns
+    immediately so the tool is never blocked on Discord I/O.
     """
-    queue = _get_queue()
-
-    def step_callback(step_output) -> None:
-        """
-        Called by CrewAI after every reasoning step.
-
-        step_output can be various CrewAI types; str() gives the text.
-        We truncate to 800 chars — thoughts channel is for reasoning
-        transparency, not full dumps.
-        """
-        text = str(step_output).strip()
-        if not text:
-            return
-        message = {"type": "thought", "agent_id": agent_id, "text": text[:800]}
-        loop.call_soon_threadsafe(queue.put_nowait, message)
-
-    def task_callback(task_output) -> None:
-        """
-        Called by CrewAI when a Task completes.
-
-        Posts a summary to thoughts and triggers the handoff sequence.
-        """
-        text = str(task_output).strip()
-        if not text:
-            return
-        message = {"type": "task_done", "agent_id": agent_id, "text": text[:1200]}
-        loop.call_soon_threadsafe(queue.put_nowait, message)
-
-    return step_callback, task_callback
+    text = (text or "").strip()
+    if not text:
+        return
+    message = {
+        "kind": "thought",
+        "agent_id": agent_id,
+        "text": text,
+        "category": category,
+        "confidence": confidence,
+    }
+    loop.call_soon_threadsafe(_get_queue().put_nowait, message)
 
 
-async def _drain(loop: asyncio.AbstractEventLoop) -> None:
+def push_agent_chat(
+    loop: asyncio.AbstractEventLoop,
+    agent_id: str,
+    text: str,
+) -> None:
     """
-    Async coroutine that reads from the narration queue and posts to Discord.
+    Push a structured per-phase update to #agent-chat from a sync context.
 
-    Runs indefinitely until cancelled. One message per iteration to
-    avoid flooding Discord with rapid-fire posts.
+    Used by the recon tools to post bulleted findings in the agent's voice
+    as each lookup completes. FIFO-ordered with thoughts via the shared queue.
     """
+    text = (text or "").strip()
+    if not text:
+        return
+    message = {"kind": "agent_chat", "agent_id": agent_id, "text": text}
+    loop.call_soon_threadsafe(_get_queue().put_nowait, message)
+
+
+async def _drain() -> None:
+    """
+    Read narration messages off the queue and post them to Discord.
+
+    Runs until cancelled. One message per iteration keeps Discord posting
+    paced and avoids rate-limit bursts.
+    """
+    from src.discord_bot.agent_bots import get_agent_manager
     from src.discord_bot.thoughts import post_thought
 
     queue = _get_queue()
@@ -110,14 +101,16 @@ async def _drain(loop: asyncio.AbstractEventLoop) -> None:
             break
 
         try:
-            agent_id = message["agent_id"]
-            text = message["text"]
-
-            if message["type"] in ("thought", "task_done"):
+            if message["kind"] == "thought":
                 await post_thought(
-                    agent_id=agent_id,
-                    thought=text,
-                    thought_type="reasoning" if message["type"] == "thought" else "summary",
+                    agent_id=message["agent_id"],
+                    thought=message["text"],
+                    confidence=message.get("confidence"),
+                    category=message.get("category", "reasoning"),
+                )
+            elif message["kind"] == "agent_chat":
+                await get_agent_manager().send_as_agent(
+                    message["agent_id"], message["text"], channel="agent_chat"
                 )
         except Exception as e:
             logger.error("Narration drainer error", error=str(e))
@@ -127,16 +120,26 @@ async def _drain(loop: asyncio.AbstractEventLoop) -> None:
 
 def start_drainer(loop: asyncio.AbstractEventLoop) -> None:
     """Launch the narration drainer as a background task on the event loop."""
-    global _drainer_task
 
-    async def _launch():
+    def _launch() -> None:
         global _drainer_task
-        _drainer_task = asyncio.create_task(_drain(loop))
+        if _drainer_task is None or _drainer_task.done():
+            _drainer_task = asyncio.create_task(_drain())
 
-    loop.call_soon_threadsafe(asyncio.ensure_future, _launch())
+    loop.call_soon_threadsafe(_launch)
+
+
+async def flush(timeout: float = 5.0) -> None:
+    """Wait until all queued thoughts have been posted (bounded by timeout)."""
+    try:
+        await asyncio.wait_for(_get_queue().join(), timeout=timeout)
+    except asyncio.TimeoutError:
+        logger.warning("Narration flush timed out with messages still queued")
 
 
 def stop_drainer() -> None:
     """Cancel the drainer task (call when the crew finishes)."""
+    global _drainer_task
     if _drainer_task and not _drainer_task.done():
         _drainer_task.cancel()
+    _drainer_task = None

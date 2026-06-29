@@ -1,7 +1,7 @@
 agent_id: randy_recon
-version: 23
+version: 30
 created: '2026-01-13T16:36:47.207437Z'
-last_updated: '2026-06-26T00:00:32.844473Z'
+last_updated: '2026-06-29T01:09:17.152225Z'
 base_traits:
   methodical: 0.9
   patience: 0.85
@@ -11,7 +11,7 @@ base_traits:
   formality: 0.3
   verbosity: 0.6
   technical_detail: 0.8
-  confidence: 0.745
+  confidence: 0.78
   enthusiasm: 0.6
   skepticism: 0.5
 evolved_traits:
@@ -58,16 +58,16 @@ personal_interests:
   - classic truck restoration
   - weekend fishing trips
 recent_learnings:
-- Completed scan on target5.example.com, found 5 items
-- Completed scan on target6.example.com, found 5 items
-- Completed scan on target7.example.com, found 5 items
-- Completed scan on target8.example.com, found 5 items
-- Completed scan on target9.example.com, found 5 items
 - Completed scan on scanme.nmap.org, found 5 items
 - Completed scan on scanme.nmap.org, found 4 items
 - Completed scan on scanme.nmap.org, found 3 items
 - Completed scan on scanme.nmap.org, found 4 items
 - Completed scan on scanme.nmap.org, found 4 items
+- Completed scan on scanme.nmap.org, found 2 items
+- Completed scan on scanme.nmap.org, found 2 items
+- Completed scan on scanme.nmap.org, found 1 items
+- Completed scan on scanme.nmap.org, found 2 items
+- Completed scan on www.intuit.com, found 1 items
 evolution_log:
 - timestamp: '2026-01-13T16:36:47.211110Z'
   trait: api_security_interest
@@ -178,4 +178,39 @@ evolution_log:
   trait: confidence
   old_value: 0.74
   new_value: 0.745
+  trigger: scan_completed
+- timestamp: '2026-06-28T05:56:09.164783Z'
+  trait: confidence
+  old_value: 0.745
+  new_value: 0.75
+  trigger: scan_completed
+- timestamp: '2026-06-28T06:39:07.954523Z'
+  trait: confidence
+  old_value: 0.75
+  new_value: 0.755
+  trigger: scan_completed
+- timestamp: '2026-06-28T23:54:53.242901Z'
+  trait: confidence
+  old_value: 0.755
+  new_value: 0.76
+  trigger: scan_completed
+- timestamp: '2026-06-29T00:02:10.657127Z'
+  trait: confidence
+  old_value: 0.76
+  new_value: 0.765
+  trigger: scan_completed
+- timestamp: '2026-06-29T00:34:18.368444Z'
+  trait: confidence
+  old_value: 0.765
+  new_value: 0.77
+  trigger: scan_completed
+- timestamp: '2026-06-29T01:03:49.551896Z'
+  trait: confidence
+  old_value: 0.77
+  new_value: 0.775
+  trigger: scan_completed
+- timestamp: '2026-06-29T01:09:17.134309Z'
+  trait: confidence
+  old_value: 0.775
+  new_value: 0.78
   trigger: scan_completed

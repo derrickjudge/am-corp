@@ -31,18 +31,25 @@ class ReconFindings:
     dns_records: dict[str, list[str]] = field(default_factory=dict)
     whois_info: dict[str, str] = field(default_factory=dict)
     raw_output: str = ""
+    # Which lookups have been attempted, so a degraded (no-LLM) fallback
+    # only runs the phases the agent did not reach. Tracks attempts, not
+    # successes — a phase that ran but found nothing is still "done".
+    completed: set[str] = field(default_factory=set)
 
     def set_ports(self, ports: list[dict[str, Any]]) -> None:
-        """Called by port_scan_tool after a successful nmap run."""
+        """Called by port_scan_tool after an nmap run."""
         self.ports = ports
+        self.completed.add("ports")
 
     def set_dns(self, records: dict[str, list[str]]) -> None:
-        """Called by dns_lookup_tool after a successful dig run."""
+        """Called by dns_lookup_tool after a dig run."""
         self.dns_records = records
+        self.completed.add("dns")
 
     def set_whois(self, info: dict[str, str]) -> None:
-        """Called by whois_lookup_tool after a successful whois run."""
+        """Called by whois_lookup_tool after a whois run."""
         self.whois_info = info
+        self.completed.add("whois")
 
     @property
     def open_port_count(self) -> int:

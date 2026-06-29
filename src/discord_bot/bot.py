@@ -435,8 +435,32 @@ class AMCorpBot(commands.Bot):
                 "intel": intel_result,
             }
 
-            # Job completed successfully - clear active job
+            # Compute completion stats before clearing the job
+            from src.discord_bot.embeds import create_scan_complete_embed
+            started = datetime.fromisoformat(self.active_job["started"])
+            elapsed = datetime.now(timezone.utc) - started
+            mins, secs = divmod(int(elapsed.total_seconds()), 60)
+            duration = f"{mins}m {secs}s" if mins else f"{secs}s"
+            ports = len(recon_result.raw_findings.get("ports", [])) if recon_result else 0
+            vulns = self.active_job["findings"].get("vuln", {}).get("total", 0)
+            subdomains = len(recon_result.raw_findings.get("dns_records", {})) if recon_result else 0
+
+            # Job completed successfully — clear active job BEFORE sending Discord
+            # messages so new commands aren't blocked if the send fails
             self.active_job = None
+
+            try:
+                await channel.send(
+                    embed=create_scan_complete_embed(
+                        target=target,
+                        duration=duration,
+                        subdomains=subdomains,
+                        ports=ports,
+                        vulns=vulns,
+                    )
+                )
+            except Exception as embed_err:
+                logger.error("Failed to send completion embed", error=str(embed_err))
             
         except Exception as e:
             logger.error(f"Scan failed: {e}", target=target, scan_type=scan_type)

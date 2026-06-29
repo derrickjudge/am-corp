@@ -73,8 +73,13 @@ class Settings(BaseSettings):
     # LLM Configuration
     # =========================================================================
     gemini_api_key: str = Field(default="", description="Gemini API key")
+    # NOTE: the Gemini free tier is ~20 requests/DAY per model (empirically
+    # observed for gemini-2.5-flash-lite). One agentic CrewAI scan spends
+    # several calls, so the free tier is only good for a handful of scans a
+    # day. For unlimited local dev, point this at an Ollama model
+    # (e.g. "ollama/llama3.1") — see src/crew/llm.py.
     gemini_model: str = Field(
-        default="gemini-2.5-flash-lite", description="Gemini model name"
+        default="gemini-2.5-flash-lite", description="Gemini (or ollama/*) model name"
     )
 
     # =========================================================================
