@@ -16,29 +16,34 @@ from src.crew import tools as tools_mod
 @pytest.mark.parametrize(
     "message",
     [
+        # Quota / rate limit (Gemini)
         "429 RESOURCE_EXHAUSTED",
         "You exceeded your current quota",
         "rate limit reached, retry later",
         "RateLimitError: too many requests",
+        # LLM server unreachable (e.g. local Ollama outage)
+        "APIConnectionError: Connection refused",
+        "Max retries exceeded with url",
+        "litellm.APIError: failed to connect to ollama",
+        "Read timed out",
     ],
 )
-def test_is_quota_error_true(message: str) -> None:
-    """Quota / rate-limit errors are recognised regardless of exact wording."""
-    assert run_mod._is_quota_error(Exception(message)) is True
+def test_should_degrade_true(message: str) -> None:
+    """Quota AND unreachable-LLM errors both trigger the deterministic fallback."""
+    assert run_mod._should_degrade(Exception(message)) is True
 
 
 @pytest.mark.parametrize(
     "message",
     [
-        "connection refused",
         "invalid API key",
         "ValueError: bad input",
-        "nmap not found",
+        "KeyError: 'target'",
     ],
 )
-def test_is_quota_error_false(message: str) -> None:
-    """Non-quota errors are not misclassified as quota errors."""
-    assert run_mod._is_quota_error(Exception(message)) is False
+def test_should_degrade_false(message: str) -> None:
+    """Genuine bugs / config errors are not degraded — they should re-raise."""
+    assert run_mod._should_degrade(Exception(message)) is False
 
 
 async def test_complete_phases_runs_only_missing(monkeypatch) -> None:

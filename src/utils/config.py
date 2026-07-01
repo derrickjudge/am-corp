@@ -82,6 +82,20 @@ class Settings(BaseSettings):
         default="gemini-2.5-flash-lite", description="Gemini (or ollama/*) model name"
     )
 
+    # Provider-agnostic routing for the CrewAI crew path. llm_model is a full
+    # LiteLLM id (e.g. "gemini/gemini-2.5-flash-lite" or "ollama/qwen2.5");
+    # llm_api_base points at a local server (Ollama) when set. Left blank, the
+    # crew stays on Gemini via gemini_model, so nothing changes until these are
+    # set. See src/crew/llm.py and the Ollama notes in docs/ENV_TEMPLATE.md.
+    llm_model: str = Field(
+        default="",
+        description="Full LiteLLM model id for the crew (blank = gemini/gemini_model)",
+    )
+    llm_api_base: str | None = Field(
+        default=None,
+        description="Crew LLM API base URL (e.g. local Ollama endpoint)",
+    )
+
     # =========================================================================
     # n8n Configuration
     # =========================================================================
@@ -191,6 +205,20 @@ class Settings(BaseSettings):
         if lower_v not in valid_levels:
             raise ValueError(f"thoughts_verbosity must be one of {valid_levels}")
         return lower_v
+
+    @property
+    def crew_llm_model(self) -> str:
+        """Full LiteLLM model id used by the CrewAI crew path.
+
+        Falls back to gemini/<gemini_model> when llm_model is unset, preserving
+        the original Gemini routing.
+        """
+        return self.llm_model or f"gemini/{self.gemini_model}"
+
+    @property
+    def crew_llm_is_ollama(self) -> bool:
+        """True when the crew LLM routes to a local Ollama model."""
+        return self.crew_llm_model.startswith("ollama/")
 
     @property
     def is_production(self) -> bool:

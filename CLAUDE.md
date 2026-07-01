@@ -136,6 +136,7 @@ Rita has a personality YAML and base class but **report generation is not implem
 - **Required to boot:** `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, `GEMINI_API_KEY`, all channel IDs, all webhook URLs.
 - **Optional (degrade gracefully):** `SHODAN_API_KEY`, `VIRUSTOTAL_API_KEY`, `SECURITYTRAILS_API_KEY`, per-agent bot tokens.
 - Multi-bot mode (each agent appears as its own Discord user) requires `DISCORD_BOT_TOKEN_RANDY`, `_VICTOR`, `_IVY`, `_RITA`.
+- **Crew LLM routing:** the CrewAI crew path (Randy today) uses `crew_llm_model` — `LLM_MODEL` if set, else `gemini/<GEMINI_MODEL>`. To run the crew on a local Ollama model (no quota) set `LLM_MODEL=ollama/qwen2.5` (or `ollama/llama3.1` — must support tool calling) and `LLM_API_BASE=http://host.containers.internal:11434`; on the host run `OLLAMA_HOST=0.0.0.0:11434 ollama serve`. The rest of the app (casual chat, mentions, hand-rolled agents) stays on Gemini. See `src/crew/llm.py`.
 
 ---
 

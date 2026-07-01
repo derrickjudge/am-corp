@@ -346,6 +346,34 @@ class PreflightChecker:
             {"model": model},
         )
 
+    def check_env_crew_llm(self) -> None:
+        """Check the CrewAI crew LLM routing (Gemini vs a local Ollama model)."""
+        from src.utils.config import settings
+
+        model = settings.crew_llm_model
+        if not settings.crew_llm_is_ollama:
+            self._add_result(
+                "config.crew_llm",
+                CheckStatus.PASS,
+                f"Crew LLM routed to Gemini: {model}",
+                {"model": model},
+            )
+        elif settings.llm_api_base:
+            self._add_result(
+                "config.crew_llm",
+                CheckStatus.PASS,
+                f"Crew LLM routed to Ollama: {model} @ {settings.llm_api_base}",
+                {"model": model, "api_base": settings.llm_api_base},
+            )
+        else:
+            self._add_result(
+                "config.crew_llm",
+                CheckStatus.WARN,
+                f"Crew LLM set to {model} but LLM_API_BASE is empty — set it to "
+                "your Ollama endpoint (e.g. http://host.containers.internal:11434)",
+                {"model": model},
+            )
+
     def check_env_webhooks(self) -> None:
         """Check webhook configuration."""
         webhooks = {
@@ -722,6 +750,7 @@ class PreflightChecker:
         # Config checks (synchronous)
         self.check_env_discord()
         self.check_env_gemini()
+        self.check_env_crew_llm()
         self.check_env_webhooks()
         self.check_env_casual_chat()
         

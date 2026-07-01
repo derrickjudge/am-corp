@@ -32,7 +32,13 @@ services:
     environment:
       - ENVIRONMENT=production
       - LOG_LEVEL=INFO
-    
+
+    # Reach a local Ollama server running on the host (used when the crew LLM
+    # is set to an ollama/* model via LLM_MODEL + LLM_API_BASE). Podman usually
+    # provides host.containers.internal; this makes the mapping explicit.
+    extra_hosts:
+      - "host.containers.internal:host-gateway"
+
     # Persist data, logs, personalities, and nuclei templates
     volumes:
       - ./data:/app/data

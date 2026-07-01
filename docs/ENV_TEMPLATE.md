@@ -98,10 +98,21 @@ DEBUG_CHANNEL_ENABLED=false
 
 # =============================================================================
 # LLM — REQUIRED
-# Free tier limits: 15 RPM, 1,500 RPD, 1M TPM
+# Gemini free tier is ~20 requests/DAY per model (observed for flash-lite).
+# Used by the hand-rolled agents and non-crew callers (casual chat, mentions).
 # =============================================================================
 GEMINI_API_KEY=
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-2.5-flash-lite
+
+# --- Crew LLM routing (the CrewAI agentic path) ---
+# Leave BOTH blank to run the crew on Gemini (GEMINI_MODEL above).
+# For unlimited local inference, point the crew at a local Ollama model:
+#   LLM_MODEL=ollama/qwen2.5        (or ollama/llama3.1 — must support tool calling)
+#   LLM_API_BASE=http://host.containers.internal:11434
+# Host setup: install Ollama, `ollama pull qwen2.5`, then serve reachable from
+# the container: `OLLAMA_HOST=0.0.0.0:11434 ollama serve`.
+LLM_MODEL=
+LLM_API_BASE=
 
 # =============================================================================
 # EXTERNAL APIs — OPTIONAL

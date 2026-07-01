@@ -60,16 +60,33 @@ logger = get_logger(__name__)
 _MAX_CHAT_CHARS = 1900
 
 
-def _is_quota_error(exc: Exception) -> bool:
-    """True if the exception is a Gemini rate-limit / quota-exhausted error."""
+def _should_degrade(exc: Exception) -> bool:
+    """
+    True if the crew LLM is unavailable — quota exhausted (Gemini) OR the model
+    server can't be reached (e.g. a local Ollama outage). In those cases we
+    finish recon deterministically instead of failing the scan. Genuine bugs
+    (e.g. ValueError, a coding error) return False so they re-raise.
+    """
     text = str(exc).lower()
-    return (
+    quota = (
         "429" in text
         or "resource_exhausted" in text
         or "quota" in text
         or "rate limit" in text
         or "ratelimit" in text
     )
+    unavailable = (
+        "connection refused" in text
+        or "connection error" in text
+        or "apiconnectionerror" in text
+        or "failed to connect" in text
+        or "max retries" in text
+        or "timed out" in text
+        or "timeout" in text
+        or "service unavailable" in text
+        or "ollama" in text
+    )
+    return quota or unavailable
 
 
 async def _post_as_randy(message: str) -> None:
@@ -167,19 +184,21 @@ async def run_crew_recon(target: str, verbose: bool = False) -> ReconResult:
         try:
             await crew.kickoff_async(inputs={"target": target})
         except Exception as e:
-            if not _is_quota_error(e):
+            if not _should_degrade(e):
                 raise
-            # Quota exhausted: the agent can't orchestrate. Finish the recon
-            # deterministically so the scan still produces structured findings.
+            # LLM unavailable (quota exhausted or model server unreachable): the
+            # agent can't orchestrate. Finish the recon deterministically so the
+            # scan still produces structured findings.
             degraded = True
             logger.warning(
-                "CrewAI kickoff hit quota limit; completing recon deterministically",
+                "CrewAI kickoff could not reach the LLM; completing recon degraded",
                 target=target,
                 job_id=job_id,
+                error=str(e)[:200],
             )
             await _post_as_randy(
-                "Well, my thinkin' cap's tapped out for now (LLM quota's dry), so I'll "
-                "run the rest of this by the book without the fancy reasoning."
+                "Well, my thinkin' cap's not cooperatin' right now (LLM's offline), so "
+                "I'll run the rest of this by the book without the fancy reasoning."
             )
             await _complete_phases_deterministically(findings)
 
