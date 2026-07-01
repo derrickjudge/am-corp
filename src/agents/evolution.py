@@ -57,7 +57,7 @@ class EvolutionTrigger:
     agent_id: str
     trigger_type: TriggerType
     context: dict[str, Any]
-    timestamp: datetime = None
+    timestamp: datetime | None = None
     
     def __post_init__(self):
         if self.timestamp is None:
@@ -265,7 +265,7 @@ async def trigger_scan_completed(
     target: str,
     success: bool,
     findings_count: int = 0,
-    context: dict = None,
+    context: dict | None = None,
 ) -> list[tuple[str, float, float]]:
     """Trigger evolution after a scan completes."""
     engine = get_evolution_engine()
@@ -294,7 +294,7 @@ async def trigger_finding_discovered(
     finding_type: str,
     severity: str | None = None,
     details: str = "",
-    context: dict = None,
+    context: dict | None = None,
 ) -> list[tuple[str, float, float]]:
     """Trigger evolution when a notable finding is discovered."""
     engine = get_evolution_engine()
@@ -333,7 +333,7 @@ async def trigger_error_encountered(
     error_type: str,
     error_message: str,
     recovered: bool = True,
-    context: dict = None,
+    context: dict | None = None,
 ) -> list[tuple[str, float, float]]:
     """Trigger evolution when an error is encountered and handled."""
     engine = get_evolution_engine()
@@ -361,7 +361,7 @@ async def trigger_pattern_observed(
     agent_id: str,
     pattern: str,
     significance: str = "notable",
-    context: dict = None,
+    context: dict | None = None,
 ) -> list[tuple[str, float, float]]:
     """Trigger evolution when an agent observes a new pattern."""
     engine = get_evolution_engine()
@@ -386,7 +386,7 @@ async def trigger_handoff(
     from_agent: str,
     to_agent: str,
     handoff_type: str,
-    context: dict = None,
+    context: dict | None = None,
 ) -> None:
     """Trigger evolution for both agents in a handoff."""
     engine = get_evolution_engine()

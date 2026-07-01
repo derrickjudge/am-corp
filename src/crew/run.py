@@ -76,7 +76,9 @@ async def _post_as_randy(message: str) -> None:
     """Post a message to #agent-chat as Randy (agent bot if available, else webhook)."""
     if len(message) > _MAX_CHAT_CHARS:
         message = message[: _MAX_CHAT_CHARS - 1].rstrip() + "…"
-    await get_agent_manager().send_as_agent(AGENT_RANDY_RECON, message, channel="agent_chat")
+    await get_agent_manager().send_as_agent(
+        AGENT_RANDY_RECON, message, channel="agent_chat"
+    )
 
 
 async def _complete_phases_deterministically(findings) -> None:
@@ -129,11 +131,14 @@ async def run_crew_recon(target: str, verbose: bool = False) -> ReconResult:
             agent_id=AGENT_RANDY_RECON,
             character=RANDY_CHARACTER,
             prompt=(
-                f"You're starting reconnaissance on {target}. Write a short, friendly "
-                f"opening message (1-2 sentences) announcing you're starting the job and "
-                f"that you'll use {tools_list}. Vary your greeting."
+                f"You're starting reconnaissance on {target}. Write a short, "
+                "friendly opening message (1-2 sentences) announcing you're "
+                "starting the job and that you'll use "
+                f"{tools_list}. Vary your greeting."
             ),
-            fallback=random.choice(OPENING_FALLBACKS).format(target=target, tools=tools_list),
+            fallback=random.choice(OPENING_FALLBACKS).format(
+                target=target, tools=tools_list
+            ),
         )
         await _post_as_randy(opening)
 
@@ -169,7 +174,8 @@ async def run_crew_recon(target: str, verbose: bool = False) -> ReconResult:
             degraded = True
             logger.warning(
                 "CrewAI kickoff hit quota limit; completing recon deterministically",
-                target=target, job_id=job_id,
+                target=target,
+                job_id=job_id,
             )
             await _post_as_randy(
                 "Well, my thinkin' cap's tapped out for now (LLM quota's dry), so I'll "
@@ -187,10 +193,15 @@ async def run_crew_recon(target: str, verbose: bool = False) -> ReconResult:
         # --- Closing recap -> #agent-chat (deterministic, structured)
         port_count = findings.open_port_count
         dns_count = sum(len(v) for v in findings.dns_records.values())
-        whois_status = "got the registration details" if findings.whois_info else "WHOIS came up empty"
+        whois_status = (
+            "got the registration details"
+            if findings.whois_info
+            else "WHOIS came up empty"
+        )
         port_status = (
             f"found {port_count} open port{'s' if port_count != 1 else ''}"
-            if port_count else "didn't find any open ports on the common ones"
+            if port_count
+            else "didn't find any open ports on the common ones"
         )
         recap = (
             f"{random.choice(SUMMARY_OPENERS).format(target=target)}\n\n"
@@ -204,7 +215,12 @@ async def run_crew_recon(target: str, verbose: bool = False) -> ReconResult:
 
     except Exception as e:
         logger.error("CrewAI recon failed", target=target, job_id=job_id, error=str(e))
-        audit_log(action="crew_recon_failed", user="randy_recon", target=target, result="error")
+        audit_log(
+            action="crew_recon_failed",
+            user="randy_recon",
+            target=target,
+            result="error",
+        )
         clear_run(job_id)
         raise
     finally:

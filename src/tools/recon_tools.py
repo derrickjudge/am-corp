@@ -91,9 +91,10 @@ async def run_command(
         # Post result to debug channel
         if is_debug_enabled():
             output_preview = stdout_decoded or stderr_decoded
+            return_code = process.returncode if process.returncode is not None else -1
             await debug_result(
                 cmd[0],  # Just the command name
-                process.returncode,
+                return_code,
                 duration,
                 agent=agent,
                 output_preview=output_preview[:100] if output_preview else None,

@@ -18,7 +18,6 @@ CHANNEL CONTRACT (see CLAUDE.md):
 """
 
 import asyncio
-from typing import Optional
 
 from src.utils.logging import get_logger
 
@@ -41,7 +40,7 @@ def push_thought(
     agent_id: str,
     text: str,
     category: str = "reasoning",
-    confidence: Optional[float] = None,
+    confidence: float | None = None,
 ) -> None:
     """
     Push a thought to #thoughts from a sync context (e.g. inside a CrewAI tool).
@@ -95,7 +94,7 @@ async def _drain() -> None:
     while True:
         try:
             message = await asyncio.wait_for(queue.get(), timeout=1.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             continue
         except asyncio.CancelledError:
             break
@@ -133,7 +132,7 @@ async def flush(timeout: float = 5.0) -> None:
     """Wait until all queued thoughts have been posted (bounded by timeout)."""
     try:
         await asyncio.wait_for(_get_queue().join(), timeout=timeout)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning("Narration flush timed out with messages still queued")
 
 

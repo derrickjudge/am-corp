@@ -80,6 +80,8 @@ async def post_debug(
                 data_str = data_str[:497] + "..."
             formatted += f"\n```json\n{data_str}\n```"
         
+        if _debug_channel is None:
+            return False
         await _debug_channel.send(formatted)
         return True
         

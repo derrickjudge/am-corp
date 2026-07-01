@@ -71,7 +71,7 @@ class Thought:
     confidence: Optional[float] = None  # 0.0 to 1.0
     category: str = "reasoning"         # See THOUGHT_CATEGORIES
     job_id: Optional[str] = None
-    timestamp: datetime = None
+    timestamp: datetime | None = None
     
     def __post_init__(self):
         if self.timestamp is None:

@@ -14,7 +14,6 @@ personality without depending on parsing CrewAI's internal step output.
 
 import asyncio
 
-from src.agents import AGENTS
 from src.agents.personality import get_personality_manager
 from src.utils.config import settings
 from src.utils.logging import get_logger

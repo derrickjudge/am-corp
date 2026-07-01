@@ -24,7 +24,6 @@ KEY CONCEPT — display is deterministic:
 
 import asyncio
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from typing import Optional
 
 from crewai.tools import tool
 
@@ -44,10 +43,10 @@ from src.utils.logging import get_logger
 logger = get_logger(__name__)
 
 # Injected at crew kickoff alongside the event loop
-_job_id: Optional[str] = None
+_job_id: str | None = None
 
 # The bot's running event loop — set once at crew kickoff via set_event_loop()
-_bot_loop: Optional[asyncio.AbstractEventLoop] = None
+_bot_loop: asyncio.AbstractEventLoop | None = None
 
 # Services worth flagging for Victor, with why they matter
 _RISKY_SERVICES = {
@@ -95,24 +94,29 @@ def _run_async(coro, timeout: int = 120):
     """
     if _bot_loop is None:
         raise RuntimeError(
-            "Bot event loop not registered. Call set_event_loop() before running the crew."
+            "Bot event loop not registered. Call set_event_loop() "
+            "before running the crew."
         )
     future = asyncio.run_coroutine_threadsafe(coro, _bot_loop)
     try:
         return future.result(timeout=timeout)
     except FutureTimeoutError:
         future.cancel()
-        raise TimeoutError(f"Async tool timed out after {timeout}s")
+        raise TimeoutError(f"Async tool timed out after {timeout}s") from None
 
 
-def _think(text: str, category: str = "reasoning", confidence: Optional[float] = None) -> None:
+def _think(
+    text: str, category: str = "reasoning", confidence: float | None = None
+) -> None:
     """Post a data-driven thought to #thoughts (no-op if loop not registered)."""
     if _bot_loop is not None:
-        push_thought(_bot_loop, AGENT_RANDY_RECON, text, category=category, confidence=confidence)
+        push_thought(
+            _bot_loop, AGENT_RANDY_RECON, text, category=category, confidence=confidence
+        )
 
 
 def _chat(text: str) -> None:
-    """Post a structured per-phase update to #agent-chat (no-op if loop not registered)."""
+    """Post a per-phase update to #agent-chat (no-op if loop unset)."""
     if _bot_loop is not None:
         push_agent_chat(_bot_loop, AGENT_RANDY_RECON, text)
 
@@ -122,6 +126,7 @@ def _store_findings():
     if not _job_id:
         return None
     from src.crew.findings import get_findings
+
     return get_findings(_job_id)
 
 
@@ -129,8 +134,9 @@ def _store_findings():
 # Phase logic — shared by the @tool wrappers and the deterministic fallback
 # =============================================================================
 
+
 async def do_dns(target: str) -> str:
-    """Run DNS lookup: write findings, post structured chat + thoughts, return LLM text."""
+    """Run DNS lookup: write findings, post chat + thoughts, return LLM text."""
     _think(
         f"Starting passive recon on {target} with DNS enumeration — it won't "
         "trip any alerts. Looking for subdomains, mail servers, and anything unusual.",
@@ -139,7 +145,10 @@ async def do_dns(target: str) -> str:
 
     result = await dig_lookup(target)
     if not result.success:
-        _think(f"DNS lookup on {target} came back empty or errored. Pressing on.", category="detail")
+        _think(
+            f"DNS lookup on {target} came back empty or errored. Pressing on.",
+            category="detail",
+        )
         return f"DNS lookup failed: {result.error}"
 
     records = (result.parsed_data or {}).get("records", {})
@@ -151,7 +160,9 @@ async def do_dns(target: str) -> str:
     # Structured #agent-chat message: Texan line + bulleted records
     total = sum(len(v) for v in records.values())
     line = _random_fallback(DNS_FALLBACKS, count=total, target=target)
-    bullets = [f"  • {rtype}: `{val}`" for rtype, values in records.items() for val in values]
+    bullets = [
+        f"  • {rtype}: `{val}`" for rtype, values in records.items() for val in values
+    ]
     _chat(line + ("\n" + "\n".join(bullets) if bullets else ""))
 
     # Analytical thoughts (deterministic, not LLM)
@@ -162,22 +173,28 @@ async def do_dns(target: str) -> str:
         _think(
             f"{len(ns_records)} name servers in play. Could be CDN plus origin, "
             "or a migration that left old records around. Worth noting.",
-            category="finding", confidence=0.7,
+            category="finding",
+            confidence=0.7,
         )
     if len(mx_records) >= 3:
-        _think(f"Multiple MX records ({len(mx_records)}) — redundant or split email handling.", category="detail")
+        _think(
+            f"Multiple MX records ({len(mx_records)}) — redundant or split "
+            "email handling.",
+            category="detail",
+        )
     if txt_records and not any("spf" in t.lower() for t in txt_records):
         _think(
             "TXT records present but no SPF that I can see. Could be a mail "
             "security gap — medium confidence, might be intentional.",
-            category="uncertainty", confidence=0.6,
+            category="uncertainty",
+            confidence=0.6,
         )
 
     return result.output or "No DNS records found."
 
 
 async def do_whois(target: str) -> str:
-    """Run WHOIS lookup: write findings, post structured chat + thoughts, return LLM text."""
+    """Run WHOIS lookup: write findings, post chat + thoughts, return LLM text."""
     _think(
         "Moving to WHOIS — want to see who owns this, when it was registered, "
         "and whether the registrar tells us anything.",
@@ -186,7 +203,9 @@ async def do_whois(target: str) -> str:
 
     result = await whois_lookup(target)
     if not result.success:
-        _think(f"WHOIS on {target} didn't return much. Moving along.", category="detail")
+        _think(
+            f"WHOIS on {target} didn't return much. Moving along.", category="detail"
+        )
         return f"WHOIS lookup failed: {result.error}"
 
     info = result.parsed_data or {}
@@ -215,20 +234,25 @@ async def do_whois(target: str) -> str:
         _think(
             f"Domain looks fairly new (created {creation_date}). Young domains "
             "sometimes mean less mature security practices.",
-            category="finding", confidence=0.6,
+            category="finding",
+            confidence=0.6,
         )
     if "privacy" in str(info.get("registrant_org", "")).lower():
-        _think("WHOIS privacy protection is on — can't see the real owner from here.", category="detail")
+        _think(
+            "WHOIS privacy protection is on — can't see the real owner from here.",
+            category="detail",
+        )
 
     return result.output or "No WHOIS data found."
 
 
 async def do_ports(target: str) -> str:
-    """Run nmap port scan: write findings, post structured chat + thoughts, return LLM text."""
+    """Run nmap scan: write findings, post chat + thoughts, return LLM text."""
     _think(
         "Passive recon's done. Moving to active port scanning now — this may "
         "show up in their logs, but we've already got good intel.",
-        category="decision", confidence=0.85,
+        category="decision",
+        confidence=0.85,
     )
 
     result = await nmap_scan(target)
@@ -262,7 +286,11 @@ async def do_ports(target: str) -> str:
         version_str = f" ({version})" if version else ""
         bullets.append(f"  • Port `{port}`: {service}{version_str}")
     victor = get_victor_mention()
-    msg = f"{line}\n" + "\n".join(bullets) + f"\n\n{victor}, reckon you'll want to poke at these."
+    msg = (
+        f"{line}\n"
+        + "\n".join(bullets)
+        + f"\n\n{victor}, reckon you'll want to poke at these."
+    )
     _chat(msg)
 
     # Analytical thoughts: flag risky services and version info for Victor
@@ -270,12 +298,15 @@ async def do_ports(target: str) -> str:
         service = str(p.get("service", "")).lower()
         port_num = p.get("port", 0)
         version = p.get("version", "")
-        significance = _RISKY_SERVICES.get(service) or _RISKY_SERVICES.get(_RISKY_PORTS.get(port_num, ""))
+        significance = _RISKY_SERVICES.get(service) or _RISKY_SERVICES.get(
+            _RISKY_PORTS.get(port_num, "")
+        )
         if significance:
             _think(
                 f"Found {service or 'a service'} on port {port_num}. {significance}. "
                 "Victor will want to look at this one.",
-                category="finding", confidence=0.8,
+                category="finding",
+                confidence=0.8,
             )
         if version:
             _think(
@@ -286,16 +317,17 @@ async def do_ports(target: str) -> str:
 
     lines = [f"Found {len(ports)} open port(s):"]
     for p in ports:
-        lines.append(
-            f"  {p.get('port', '?')}/tcp  {p.get('service', p.get('name', 'unknown'))}  "
-            f"{p.get('version', '')}".rstrip()
-        )
+        port = p.get("port", "?")
+        svc = p.get("service", p.get("name", "unknown"))
+        ver = p.get("version", "")
+        lines.append(f"  {port}/tcp  {svc}  {ver}".rstrip())
     return "\n".join(lines)
 
 
 # =============================================================================
 # Randy's three CrewAI tools — thin sync wrappers over the do_*() functions
 # =============================================================================
+
 
 @tool("DNS Lookup")
 def dns_lookup_tool(target: str) -> str:

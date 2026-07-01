@@ -8,7 +8,7 @@ as a separate user in Discord.
 
 import asyncio
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, cast
 
 import discord
 
@@ -79,16 +79,19 @@ class AgentBot(discord.Client):
             guild = self.get_guild(guild_id)
             if guild:
                 if settings.discord_channel_agent_chat:
-                    self.agent_chat_channel = guild.get_channel(
-                        int(settings.discord_channel_agent_chat)
+                    self.agent_chat_channel = cast(
+                        "discord.TextChannel | None",
+                        guild.get_channel(int(settings.discord_channel_agent_chat)),
                     )
                 if settings.discord_channel_results:
-                    self.results_channel = guild.get_channel(
-                        int(settings.discord_channel_results)
+                    self.results_channel = cast(
+                        "discord.TextChannel | None",
+                        guild.get_channel(int(settings.discord_channel_results)),
                     )
                 if settings.discord_channel_alerts:
-                    self.alerts_channel = guild.get_channel(
-                        int(settings.discord_channel_alerts)
+                    self.alerts_channel = cast(
+                        "discord.TextChannel | None",
+                        guild.get_channel(int(settings.discord_channel_alerts)),
                     )
                 
                 # Set up debug channel if enabled (only do this once from first bot)
