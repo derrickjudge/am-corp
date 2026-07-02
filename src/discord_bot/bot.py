@@ -380,15 +380,22 @@ class AMCorpBot(commands.Bot):
 
                         self.active_job["phase"] = "intel"
 
-                        from src.agents.ivy_intel import get_ivy
-                        ivy = get_ivy()
-
-                        # Pass Victor's findings to Ivy for enrichment
-                        intel_result = await ivy.run_intel(
-                            target=target,
-                            vuln_findings=vuln_result.all_findings,
-                            verbose=verbose,
-                        )
+                        if settings.use_crewai:
+                            from src.crew.run import run_crew_intel
+                            intel_result = await run_crew_intel(
+                                target,
+                                vuln_findings=vuln_result.all_findings,
+                                verbose=verbose,
+                            )
+                        else:
+                            from src.agents.ivy_intel import get_ivy
+                            ivy = get_ivy()
+                            # Pass Victor's findings to Ivy for enrichment
+                            intel_result = await ivy.run_intel(
+                                target=target,
+                                vuln_findings=vuln_result.all_findings,
+                                verbose=verbose,
+                            )
 
                         self.active_job["findings"]["intel"] = {
                             "cves_enriched": len(intel_result.cve_enrichments),
@@ -432,9 +439,13 @@ class AMCorpBot(commands.Bot):
                 # Run Ivy's intelligence gathering directly
                 self.active_job["phase"] = "intel"
 
-                from src.agents.ivy_intel import get_ivy
-                ivy = get_ivy()
-                intel_result = await ivy.run_intel(target=target, verbose=verbose)
+                if settings.use_crewai:
+                    from src.crew.run import run_crew_intel
+                    intel_result = await run_crew_intel(target, verbose=verbose)
+                else:
+                    from src.agents.ivy_intel import get_ivy
+                    ivy = get_ivy()
+                    intel_result = await ivy.run_intel(target=target, verbose=verbose)
 
             # Persist results for !report even after job clears
             self.last_scan_results = {

@@ -21,6 +21,14 @@ collide. For now there's only ever one active scan at a time.
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.tools.intel_tools import (
+    CVEDetails,
+    SecurityTrailsResult,
+    ShodanResult,
+    VirusTotalResult,
+    assess_exploitation_risk,
+)
+
 
 @dataclass
 class ReconFindings:
@@ -155,3 +163,75 @@ def get_vuln_findings(job_id: str) -> VulnFindings | None:
 def clear_vuln_run(job_id: str) -> None:
     """Remove vuln findings after the job is complete."""
     _vuln_store.pop(job_id, None)
+
+
+@dataclass
+class IntelFindings:
+    """Structured output from Ivy's threat intelligence crew."""
+
+    target: str
+    # Inputs extracted from Victor's handoff, fed in at init_intel_run(). Read
+    # by the tool wrappers to know what to enrich/look up.
+    cves: list[str] = field(default_factory=list)
+    ips: list[str] = field(default_factory=list)
+    cve_enrichments: list[CVEDetails] = field(default_factory=list)
+    shodan_result: ShodanResult | None = None
+    virustotal_result: VirusTotalResult | None = None
+    securitytrails_result: SecurityTrailsResult | None = None
+    # Which sources have been attempted, so a degraded (no-LLM) fallback only
+    # runs the sources the agent did not reach.
+    completed: set[str] = field(default_factory=set)
+
+    def set_cve_enrichments(self, items: list[CVEDetails]) -> None:
+        """Called by cve_enrichment_tool after an NVD/EPSS lookup."""
+        self.cve_enrichments = items
+        self.completed.add("cve")
+
+    def set_shodan_result(self, result: ShodanResult) -> None:
+        """Called by shodan_lookup_tool after a Shodan lookup."""
+        self.shodan_result = result
+        self.completed.add("shodan")
+
+    def set_virustotal_result(self, result: VirusTotalResult) -> None:
+        """Called by virustotal_lookup_tool after a VirusTotal lookup."""
+        self.virustotal_result = result
+        self.completed.add("virustotal")
+
+    def set_securitytrails_result(self, result: SecurityTrailsResult) -> None:
+        """Called by securitytrails_lookup_tool after a SecurityTrails lookup."""
+        self.securitytrails_result = result
+        self.completed.add("securitytrails")
+
+    @property
+    def high_risk_cve_count(self) -> int:
+        return sum(
+            1
+            for c in self.cve_enrichments
+            if not c.error and assess_exploitation_risk(c) in ("CRITICAL", "HIGH")
+        )
+
+
+# In-memory store keyed by job_id, separate from the recon/vuln stores above.
+_intel_store: dict[str, IntelFindings] = {}
+
+
+def init_intel_run(
+    job_id: str,
+    target: str,
+    cves: list[str] | None = None,
+    ips: list[str] | None = None,
+) -> IntelFindings:
+    """Create a fresh intel findings slot for a new scan job."""
+    findings = IntelFindings(target=target, cves=cves or [], ips=ips or [])
+    _intel_store[job_id] = findings
+    return findings
+
+
+def get_intel_findings(job_id: str) -> IntelFindings | None:
+    """Retrieve intel findings for an active run. Returns None if not found."""
+    return _intel_store.get(job_id)
+
+
+def clear_intel_run(job_id: str) -> None:
+    """Remove intel findings after the job is complete."""
+    _intel_store.pop(job_id, None)

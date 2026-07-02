@@ -38,8 +38,12 @@ from typing import Any
 
 from crewai import Crew, Process, Task
 
-from src.agents import AGENT_RANDY_RECON, AGENT_VICTOR_VULN
+from src.agents import AGENT_IVY_INTEL, AGENT_RANDY_RECON, AGENT_VICTOR_VULN
 from src.agents.evolution import trigger_scan_completed
+from src.agents.ivy_intel import OPENING_FALLBACKS as IVY_OPENING_FALLBACKS
+from src.agents.ivy_intel import PARANOID_CLOSERS as IVY_PARANOID_CLOSERS
+from src.agents.ivy_intel import SUMMARY_OPENERS as IVY_SUMMARY_OPENERS
+from src.agents.ivy_intel import IntelScanResult, get_ivy
 from src.agents.randy_recon import (
     OPENING_FALLBACKS,
     SUMMARY_CLOSERS,
@@ -50,14 +54,17 @@ from src.agents.victor_vuln import OPENING_FALLBACKS as VICTOR_OPENING_FALLBACKS
 from src.agents.victor_vuln import SUMMARY_OPENERS as VICTOR_SUMMARY_OPENERS
 from src.agents.victor_vuln import VulnScanResult
 from src.crew import agents as agent_factory
-from src.crew import narration, vuln_tools
+from src.crew import intel_tools, narration, vuln_tools
 from src.crew import tools as recon_tools
-from src.crew.agents import RANDY_CHARACTER, VICTOR_CHARACTER
+from src.crew.agents import IVY_CHARACTER, RANDY_CHARACTER, VICTOR_CHARACTER
 from src.crew.findings import (
+    IntelFindings,
     ReconFindings,
     VulnFindings,
+    clear_intel_run,
     clear_run,
     clear_vuln_run,
+    init_intel_run,
     init_run,
     init_vuln_run,
 )
@@ -70,6 +77,7 @@ from src.discord_bot.agent_bots import (
     get_rita_mention,
     get_victor_mention,
 )
+from src.tools.intel_tools import get_intel_capabilities
 from src.utils.logging import audit_log, get_logger
 
 logger = get_logger(__name__)
@@ -141,6 +149,28 @@ async def _complete_vuln_phases_deterministically(findings: VulnFindings) -> Non
     """
     if "nuclei" not in findings.completed:
         await vuln_tools.do_nuclei_scan(findings.target, findings.ports)
+
+
+async def _complete_intel_phases_deterministically(
+    findings: IntelFindings, capabilities: dict[str, bool]
+) -> None:
+    """
+    Run any intel sources the agent did not reach, with no LLM involved.
+
+    Unlike Randy/Victor's always-run phases, each of Ivy's sources is
+    independently optional (gated on an API key and/or available CVEs/IPs),
+    so this checks each source's precondition before running it. Called both
+    on LLM-unavailable degradation and as the clean-run safety net, since a
+    successful agentic run might still have skipped an available source.
+    """
+    if findings.cves and "cve" not in findings.completed:
+        await intel_tools.do_cve_enrichment(findings.cves)
+    if capabilities["shodan"] and findings.ips and "shodan" not in findings.completed:
+        await intel_tools.do_shodan_lookup(findings.ips[0])
+    if capabilities["virustotal"] and "virustotal" not in findings.completed:
+        await intel_tools.do_virustotal_lookup(findings.target)
+    if capabilities["securitytrails"] and "securitytrails" not in findings.completed:
+        await intel_tools.do_securitytrails_lookup(findings.target)
 
 
 async def run_crew_recon(target: str, verbose: bool = False) -> ReconResult:
@@ -474,5 +504,214 @@ async def run_crew_vuln(
     )
 
     clear_vuln_run(job_id)
+
+    return result
+
+
+async def run_crew_intel(
+    target: str,
+    vuln_findings: list[dict[str, Any]] | None = None,
+    verbose: bool = False,
+) -> IntelScanResult:
+    """
+    Run Ivy Intel as a CrewAI agent against the given target.
+
+    Drop-in replacement for IvyIntelAgent.run_intel(): returns the same
+    IntelScanResult so callers don't change. Degrades to deterministic lookups
+    if the crew LLM is unavailable (see module docstring).
+
+    Args:
+        target:        Hostname or IP to enrich (must already be scope-verified).
+        vuln_findings: Victor's raw findings, used to extract CVE IDs and IPs
+                       to enrich (same extraction logic as the hand-rolled path).
+        verbose:       If True, surface more detail to the thoughts channel.
+
+    Returns:
+        IntelScanResult populated from the findings store.
+    """
+    cves: list[str] = []
+    ips: list[str] = []
+    if vuln_findings:
+        ivy_agent = get_ivy()
+        cves = ivy_agent._extract_cves_from_findings(vuln_findings)
+        ips = ivy_agent._extract_ips_from_findings(vuln_findings)
+
+    loop = asyncio.get_running_loop()
+    job_id = str(uuid.uuid4())[:8]
+
+    logger.info("CrewAI intel gathering starting", target=target, job_id=job_id)
+
+    intel_tools.set_event_loop(loop)
+    intel_tools.set_job_id(job_id)
+    findings = init_intel_run(job_id, target, cves=cves, ips=ips)
+    start_drainer(loop)
+
+    capabilities = get_intel_capabilities()
+    available_sources = ["CVE enrichment", "EPSS scores"]
+    if capabilities["shodan"] and ips:
+        available_sources.append("Shodan")
+    if capabilities["virustotal"]:
+        available_sources.append("VirusTotal")
+    if capabilities["securitytrails"]:
+        available_sources.append("SecurityTrails")
+
+    degraded = False
+    try:
+        # --- Opening message in Ivy's voice -> #agent-chat
+        opening = await generate_agent_message(
+            agent_id=AGENT_IVY_INTEL,
+            character=IVY_CHARACTER,
+            prompt=(
+                f"You're starting threat intelligence gathering on {target}. "
+                f"Available sources: {', '.join(available_sources)}. Write a "
+                "short opening message (1-2 sentences) with your British accent "
+                "and slight paranoia. Vary your greeting."
+            ),
+            fallback=random.choice(IVY_OPENING_FALLBACKS).format(target=target),
+        )
+        await _post_as(AGENT_IVY_INTEL, opening)
+
+        # --- Build the Agent and Task. The task description tells the LLM
+        #     which sources are actually available, so it doesn't waste a
+        #     tool call on one that will just report "not configured".
+        ivy = agent_factory.build_ivy(target=target)
+        task_lines = [f"Gather threat intelligence on '{target}'."]
+        if cves:
+            task_lines.append(f"Enrich the {len(cves)} known CVE(s) with the CVE tool.")
+        if capabilities["shodan"] and ips:
+            task_lines.append("Check Shodan for exposure history.")
+        if capabilities["virustotal"]:
+            task_lines.append("Check VirusTotal for reputation data.")
+        if capabilities["securitytrails"]:
+            task_lines.append("Check SecurityTrails for subdomain/attack-surface data.")
+        task = Task(
+            description="\n".join(task_lines),
+            expected_output=(
+                "A one-line confirmation of which intel sources were checked."
+            ),
+            agent=ivy,
+        )
+        crew = Crew(
+            agents=[ivy],
+            tasks=[task],
+            process=Process.sequential,
+            verbose=verbose,
+        )
+
+        try:
+            await crew.kickoff_async(inputs={"target": target})
+        except Exception as e:
+            if not _should_degrade(e):
+                raise
+            # LLM unavailable (quota exhausted or model server unreachable): the
+            # agent can't orchestrate. Finish the lookups deterministically so
+            # the scan still produces structured findings.
+            degraded = True
+            logger.warning(
+                "CrewAI kickoff could not reach the LLM; completing intel degraded",
+                target=target,
+                job_id=job_id,
+                error=str(e)[:200],
+            )
+            await _post_as(
+                AGENT_IVY_INTEL,
+                "Right, my thinkin' cap's offline (LLM's down) — running the "
+                "checks the old-fashioned way.",
+            )
+
+        # Safety net: fill any available source the agent skipped, whether
+        # degraded or on a clean run (each source is independently optional).
+        await _complete_intel_phases_deterministically(findings, capabilities)
+
+        # Let queued per-phase messages and thoughts post before the recap.
+        await narration.flush()
+
+        # --- Closing recap -> #agent-chat (deterministic, structured)
+        opener = random.choice(IVY_SUMMARY_OPENERS).format(target=target)
+        closer = random.choice(IVY_PARANOID_CLOSERS)
+        parts = []
+        if findings.cve_enrichments:
+            parts.append(
+                f"{len(findings.cve_enrichments)} CVE(s) enriched, "
+                f"{findings.high_risk_cve_count} high-risk"
+            )
+        if findings.shodan_result and not findings.shodan_result.error:
+            parts.append(f"Shodan: {len(findings.shodan_result.ports)} exposed port(s)")
+        if findings.virustotal_result and not findings.virustotal_result.error:
+            vt = findings.virustotal_result
+            parts.append(
+                "VirusTotal: clean"
+                if vt.malicious_count == 0
+                else f"VirusTotal: {vt.malicious_count} malicious"
+            )
+        if findings.securitytrails_result and not findings.securitytrails_result.error:
+            st_count = findings.securitytrails_result.subdomain_count
+            parts.append(f"SecurityTrails: {st_count} subdomain(s)")
+        context = "; ".join(parts) if parts else "Limited intel available"
+        recap = (
+            f"{opener}\n\n**Summary:** {context}\n\n"
+            f"{get_rita_mention()}, got context for your report. {closer}"
+        )
+        await _post_as(AGENT_IVY_INTEL, recap)
+
+    except Exception as e:
+        logger.error(
+            "CrewAI intel gathering failed", target=target, job_id=job_id, error=str(e)
+        )
+        audit_log(
+            action="crew_intel_failed",
+            user="ivy_intel",
+            target=target,
+            result="error",
+        )
+        clear_intel_run(job_id)
+        raise
+    finally:
+        stop_drainer()
+
+    findings_count = (
+        len(findings.cve_enrichments)
+        + (1 if findings.shodan_result else 0)
+        + (1 if findings.virustotal_result else 0)
+    )
+
+    audit_log(
+        action="crew_intel_completed",
+        user="ivy_intel",
+        target=target,
+        result="degraded" if degraded else "success",
+        cves_enriched=len(findings.cve_enrichments),
+    )
+
+    await trigger_scan_completed(
+        agent_id=AGENT_IVY_INTEL,
+        target=target,
+        success=True,
+        findings_count=findings_count,
+    )
+
+    result = IntelScanResult(
+        target=target,
+        cve_enrichments=findings.cve_enrichments,
+        shodan_result=findings.shodan_result,
+        virustotal_result=findings.virustotal_result,
+        securitytrails_result=findings.securitytrails_result,
+        summary=(
+            f"Intel gathering complete on {target}. "
+            f"{findings_count} finding(s) enriched."
+        ),
+        raw_findings={
+            "cves_enriched": len(findings.cve_enrichments),
+            "shodan_available": findings.shodan_result is not None
+            and not findings.shodan_result.error,
+            "virustotal_available": findings.virustotal_result is not None
+            and not findings.virustotal_result.error,
+            "securitytrails_available": findings.securitytrails_result is not None
+            and not findings.securitytrails_result.error,
+            "capabilities": capabilities,
+        },
+    )
+
+    clear_intel_run(job_id)
 
     return result

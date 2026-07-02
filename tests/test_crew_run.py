@@ -8,10 +8,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from src.crew import intel_tools as intel_tools_mod
 from src.crew import run as run_mod
 from src.crew import tools as tools_mod
 from src.crew import vuln_tools as vuln_tools_mod
-from src.crew.findings import ReconFindings, VulnFindings
+from src.crew.findings import IntelFindings, ReconFindings, VulnFindings
 
 
 @pytest.mark.parametrize(
@@ -115,3 +116,74 @@ async def test_complete_vuln_phases_skips_when_already_done(monkeypatch) -> None
 
     # Assert
     do_nuclei_scan.assert_not_called()
+
+
+async def test_complete_intel_phases_runs_available_sources(monkeypatch) -> None:
+    """Each available, not-yet-completed source is run; unavailable ones are skipped."""
+    # Arrange — CVEs and an IP available; only Shodan+VirusTotal capable (no key
+    # for SecurityTrails); nothing completed yet.
+    findings = IntelFindings(
+        target="example.com", cves=["CVE-2024-0001"], ips=["1.2.3.4"], completed=set()
+    )
+    capabilities = {"shodan": True, "virustotal": True, "securitytrails": False}
+    do_cve = AsyncMock()
+    do_shodan = AsyncMock()
+    do_vt = AsyncMock()
+    do_st = AsyncMock()
+    monkeypatch.setattr(intel_tools_mod, "do_cve_enrichment", do_cve)
+    monkeypatch.setattr(intel_tools_mod, "do_shodan_lookup", do_shodan)
+    monkeypatch.setattr(intel_tools_mod, "do_virustotal_lookup", do_vt)
+    monkeypatch.setattr(intel_tools_mod, "do_securitytrails_lookup", do_st)
+
+    # Act
+    await run_mod._complete_intel_phases_deterministically(findings, capabilities)
+
+    # Assert
+    do_cve.assert_awaited_once_with(["CVE-2024-0001"])
+    do_shodan.assert_awaited_once_with("1.2.3.4")
+    do_vt.assert_awaited_once_with("example.com")
+    do_st.assert_not_called()
+
+
+async def test_complete_intel_phases_skips_already_completed(monkeypatch) -> None:
+    """Sources already marked completed by the agent are not re-run."""
+    # Arrange
+    findings = IntelFindings(
+        target="example.com",
+        cves=["CVE-2024-0001"],
+        ips=["1.2.3.4"],
+        completed={"cve", "shodan", "virustotal"},
+    )
+    capabilities = {"shodan": True, "virustotal": True, "securitytrails": True}
+    do_cve = AsyncMock()
+    do_shodan = AsyncMock()
+    do_vt = AsyncMock()
+    do_st = AsyncMock()
+    monkeypatch.setattr(intel_tools_mod, "do_cve_enrichment", do_cve)
+    monkeypatch.setattr(intel_tools_mod, "do_shodan_lookup", do_shodan)
+    monkeypatch.setattr(intel_tools_mod, "do_virustotal_lookup", do_vt)
+    monkeypatch.setattr(intel_tools_mod, "do_securitytrails_lookup", do_st)
+
+    # Act
+    await run_mod._complete_intel_phases_deterministically(findings, capabilities)
+
+    # Assert
+    do_cve.assert_not_called()
+    do_shodan.assert_not_called()
+    do_vt.assert_not_called()
+    do_st.assert_awaited_once_with("example.com")
+
+
+async def test_complete_intel_phases_skips_cve_when_no_cves(monkeypatch) -> None:
+    """CVE enrichment is skipped entirely when Victor found no CVEs to check."""
+    # Arrange
+    findings = IntelFindings(target="example.com", cves=[], ips=[], completed=set())
+    capabilities = {"shodan": False, "virustotal": False, "securitytrails": False}
+    do_cve = AsyncMock()
+    monkeypatch.setattr(intel_tools_mod, "do_cve_enrichment", do_cve)
+
+    # Act
+    await run_mod._complete_intel_phases_deterministically(findings, capabilities)
+
+    # Assert
+    do_cve.assert_not_called()

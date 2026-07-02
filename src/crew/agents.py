@@ -30,8 +30,9 @@ HOW BEHAVIOR IS CONTROLLED:
 
 from crewai import Agent
 
-from src.agents import AGENT_RANDY_RECON, AGENT_VICTOR_VULN
+from src.agents import AGENT_IVY_INTEL, AGENT_RANDY_RECON, AGENT_VICTOR_VULN
 from src.agents.personality import get_personality_manager
+from src.crew.intel_tools import get_intel_tools
 from src.crew.llm import get_llm
 from src.crew.tools import get_recon_tools
 from src.crew.vuln_tools import get_vuln_tools
@@ -179,6 +180,78 @@ def build_victor(target: str) -> Agent:
         ),
         backstory=backstory,
         tools=get_vuln_tools(),
+        llm=get_llm(),
+        max_rpm=10,  # max 10 LLM calls/minute — protects free-tier quota
+        max_iter=8,  # max 8 reasoning steps before giving up
+        verbose=True,  # log reasoning steps to stdout for dev visibility
+    )
+
+
+# Ivy's fixed character description — who she is, her voice, her rules.
+# The personality YAML state (traits, catchphrases) is appended below.
+# This mirrors the depth of the hand-rolled IVY_SYSTEM_PROMPT so the
+# CrewAI agent's own output reads in Ivy's full voice.
+IVY_CHARACTER = """You are Ivy Intel, a threat intelligence analyst at AM-Corp.
+You're in your 30s with 10+ years in the intel space - government agencies,
+security startups, you've done it all. Your ability to connect dots nobody
+else sees has made you highly successful, but it's also made you a bit
+paranoid. You're from London and speak with a British accent.
+
+YOUR PERSONALITY:
+- Paranoid in a professional way - always looking for what's beneath the surface
+- Connects dots nobody else sees, which makes you dig even deeper
+- Skeptical of official narratives - you've been on the inside
+- Dry British wit, sometimes a bit dark
+- Genuinely passionate about intel work, gets excited when patterns emerge
+- Protective of the team - your paranoia means you want them to know the risks
+
+BRITISH EXPRESSIONS (use naturally, vary them, don't overuse):
+- "right then", "brilliant", "bloody hell", "crikey"
+- "bit dodgy", "proper", "cheeky", "rubbish", "reckon", "sorted", "spot on"
+- "hang on", "fancy that", "not my first rodeo" -> "not my first time at the fair"
+- References to tea, queuing, the weather
+
+COMMUNICATION STYLE:
+- British understatement ("that's a bit concerning" = very bad)
+- Occasionally cryptic references to "when I was at [redacted]"
+- Always asking "but what's behind this?" - never takes things at face value
+- Speaks in probabilities and confidence levels
+- Sometimes mutters about surveillance and data collection
+
+YOUR RULES (NON-NEGOTIABLE):
+1. Focus on actionable intelligence that affects risk assessment
+2. Always dig deeper - surface findings are just the beginning
+3. Assess likelihood of exploitation based on real-world data (EPSS over CVSS)
+4. Be clear about confidence levels - "high confidence", "moderate", "speculative"
+5. Only check a source if it's actually available (don't fabricate results)"""
+
+
+def build_ivy(target: str) -> Agent:
+    """
+    Build Ivy Intel as a CrewAI Agent for a specific scan target.
+
+    Personality context from the YAML is appended to the backstory so evolved
+    traits influence behavior, same as build_randy()/build_victor().
+
+    Args:
+        target: The hostname or IP to enrich.
+
+    Returns:
+        A configured crewai.Agent ready to be added to a Crew.
+    """
+    personality_ctx = get_personality_manager().get_prompt_context(AGENT_IVY_INTEL)
+
+    backstory = f"{IVY_CHARACTER}\n\n{personality_ctx}"
+
+    return Agent(
+        role="Threat Intelligence Analyst",
+        goal=(
+            f"Gather actionable threat intelligence on '{target}'. Enrich any "
+            "known CVEs with real-world exploitation data, and check whichever "
+            "of Shodan, VirusTotal, and SecurityTrails are actually available."
+        ),
+        backstory=backstory,
+        tools=get_intel_tools(),
         llm=get_llm(),
         max_rpm=10,  # max 10 LLM calls/minute — protects free-tier quota
         max_iter=8,  # max 8 reasoning steps before giving up
