@@ -30,10 +30,17 @@ HOW BEHAVIOR IS CONTROLLED:
 
 from crewai import Agent
 
-from src.agents import AGENT_IVY_INTEL, AGENT_RANDY_RECON, AGENT_VICTOR_VULN
+from src.agents import (
+    AGENT_IVY_INTEL,
+    AGENT_RANDY_RECON,
+    AGENT_RITA_REPORT,
+    AGENT_VICTOR_VULN,
+)
 from src.agents.personality import get_personality_manager
+from src.agents.rita_report import RITA_SYSTEM_PROMPT as RITA_CHARACTER
 from src.crew.intel_tools import get_intel_tools
 from src.crew.llm import get_llm
+from src.crew.report_tools import get_report_tools
 from src.crew.tools import get_recon_tools
 from src.crew.vuln_tools import get_vuln_tools
 
@@ -255,5 +262,38 @@ def build_ivy(target: str) -> Agent:
         llm=get_llm(),
         max_rpm=10,  # max 10 LLM calls/minute — protects free-tier quota
         max_iter=8,  # max 8 reasoning steps before giving up
+        verbose=True,  # log reasoning steps to stdout for dev visibility
+    )
+
+
+def build_rita(target: str) -> Agent:
+    """
+    Build Rita Report as a CrewAI Agent for a specific scan target.
+
+    Rita has exactly one tool (see report_tools.py's module docstring for why
+    her conversion is a single-tool wrapper rather than multi-tool
+    orchestration like the other three agents).
+
+    Args:
+        target: The hostname or IP the report covers.
+
+    Returns:
+        A configured crewai.Agent ready to be added to a Crew.
+    """
+    personality_ctx = get_personality_manager().get_prompt_context(AGENT_RITA_REPORT)
+
+    backstory = f"{RITA_CHARACTER}\n\n{personality_ctx}"
+
+    return Agent(
+        role="Security Report Analyst",
+        goal=(
+            f"Compile the team's findings on '{target}' into a prioritized "
+            "security assessment report with a clear executive summary."
+        ),
+        backstory=backstory,
+        tools=get_report_tools(),
+        llm=get_llm(),
+        max_rpm=10,  # max 10 LLM calls/minute — protects free-tier quota
+        max_iter=4,  # only one tool call is ever needed
         verbose=True,  # log reasoning steps to stdout for dev visibility
     )

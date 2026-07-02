@@ -38,7 +38,12 @@ from typing import Any
 
 from crewai import Crew, Process, Task
 
-from src.agents import AGENT_IVY_INTEL, AGENT_RANDY_RECON, AGENT_VICTOR_VULN
+from src.agents import (
+    AGENT_IVY_INTEL,
+    AGENT_RANDY_RECON,
+    AGENT_RITA_REPORT,
+    AGENT_VICTOR_VULN,
+)
 from src.agents.evolution import trigger_scan_completed
 from src.agents.ivy_intel import OPENING_FALLBACKS as IVY_OPENING_FALLBACKS
 from src.agents.ivy_intel import PARANOID_CLOSERS as IVY_PARANOID_CLOSERS
@@ -50,21 +55,30 @@ from src.agents.randy_recon import (
     SUMMARY_OPENERS,
     ReconResult,
 )
+from src.agents.rita_report import ReportResult
 from src.agents.victor_vuln import OPENING_FALLBACKS as VICTOR_OPENING_FALLBACKS
 from src.agents.victor_vuln import SUMMARY_OPENERS as VICTOR_SUMMARY_OPENERS
 from src.agents.victor_vuln import VulnScanResult
 from src.crew import agents as agent_factory
-from src.crew import intel_tools, narration, vuln_tools
+from src.crew import intel_tools, narration, report_tools, vuln_tools
 from src.crew import tools as recon_tools
-from src.crew.agents import IVY_CHARACTER, RANDY_CHARACTER, VICTOR_CHARACTER
+from src.crew.agents import (
+    IVY_CHARACTER,
+    RANDY_CHARACTER,
+    RITA_CHARACTER,
+    VICTOR_CHARACTER,
+)
 from src.crew.findings import (
     IntelFindings,
     ReconFindings,
+    ReportFindings,
     VulnFindings,
     clear_intel_run,
+    clear_report_run,
     clear_run,
     clear_vuln_run,
     init_intel_run,
+    init_report_run,
     init_run,
     init_vuln_run,
 )
@@ -171,6 +185,23 @@ async def _complete_intel_phases_deterministically(
         await intel_tools.do_virustotal_lookup(findings.target)
     if capabilities["securitytrails"] and "securitytrails" not in findings.completed:
         await intel_tools.do_securitytrails_lookup(findings.target)
+
+
+async def _complete_report_phases_deterministically(findings: ReportFindings) -> None:
+    """
+    Compile the report if the agent did not reach it, with no LLM involved.
+
+    Used when the CrewAI kickoff aborts on a quota/LLM-unavailable error, or
+    as the clean-run safety net. Awaits do_compile_report() directly so the
+    findings store ends up populated identically to the agentic path.
+    """
+    if "report" not in findings.completed:
+        await report_tools.do_compile_report(
+            findings.target,
+            findings.recon_result,
+            findings.vuln_result,
+            findings.intel_result,
+        )
 
 
 async def run_crew_recon(target: str, verbose: bool = False) -> ReconResult:
@@ -715,3 +746,135 @@ async def run_crew_intel(
     clear_intel_run(job_id)
 
     return result
+
+
+async def run_crew_report(
+    target: str,
+    recon_result: ReconResult | None = None,
+    vuln_result: VulnScanResult | None = None,
+    intel_result: IntelScanResult | None = None,
+    verbose: bool = False,
+) -> ReportResult:
+    """
+    Run Rita Report as a CrewAI agent to compile the team's findings.
+
+    Drop-in replacement for RitaReport.run_report(): returns the same
+    ReportResult so callers don't change. Degrades to a deterministic compile
+    if the crew LLM is unavailable (see module docstring).
+
+    Rita has exactly one tool (see report_tools.py's module docstring), so
+    this mirrors the other run_crew_*() functions structurally but has no
+    per-source safety-net branching — just one phase to complete.
+
+    Args:
+        target:       Hostname or IP the report covers.
+        recon_result: Randy's reconnaissance result, if available.
+        vuln_result:  Victor's vulnerability scan result, if available.
+        intel_result: Ivy's intelligence result, if available.
+        verbose:      If True, surface more detail to the thoughts channel.
+
+    Returns:
+        ReportResult populated from the findings store.
+    """
+    loop = asyncio.get_running_loop()
+    job_id = str(uuid.uuid4())[:8]
+
+    logger.info("CrewAI report compilation starting", target=target, job_id=job_id)
+
+    report_tools.set_event_loop(loop)
+    report_tools.set_job_id(job_id)
+    findings = init_report_run(job_id, target, recon_result, vuln_result, intel_result)
+    start_drainer(loop)
+
+    degraded = False
+    try:
+        # --- Opening message in Rita's voice -> #agent-chat
+        opening = await generate_agent_message(
+            agent_id=AGENT_RITA_REPORT,
+            character=RITA_CHARACTER,
+            prompt=(
+                f"You're about to compile the team's findings on {target} into "
+                "a report. Write a short opening message (1 sentence) letting "
+                "the team know you're on it."
+            ),
+            fallback=(
+                f"Pulling together the team's findings on {target}. "
+                "Give me a moment to compile the report."
+            ),
+        )
+        await _post_as(AGENT_RITA_REPORT, opening)
+
+        # --- Build the Agent and Task. Rita has exactly one tool to call.
+        rita = agent_factory.build_rita(target=target)
+        task = Task(
+            description=(
+                f"Compile a security assessment report for '{target}' by "
+                "calling your report tool once."
+            ),
+            expected_output="A one-line confirmation the report was compiled.",
+            agent=rita,
+        )
+        crew = Crew(
+            agents=[rita],
+            tasks=[task],
+            process=Process.sequential,
+            verbose=verbose,
+        )
+
+        try:
+            await crew.kickoff_async(inputs={"target": target})
+        except Exception as e:
+            if not _should_degrade(e):
+                raise
+            # LLM unavailable (quota exhausted or model server unreachable): the
+            # agent can't orchestrate. Compile the report deterministically.
+            degraded = True
+            logger.warning(
+                "CrewAI kickoff could not reach the LLM; compiling report degraded",
+                target=target,
+                job_id=job_id,
+                error=str(e)[:200],
+            )
+            await _complete_report_phases_deterministically(findings)
+
+        # Safety net: the agent should always call its one tool, but cover the
+        # edge case where it doesn't.
+        if not degraded and "report" not in findings.completed:
+            await _complete_report_phases_deterministically(findings)
+
+        await narration.flush()
+
+    except Exception as e:
+        logger.error(
+            "CrewAI report compilation failed",
+            target=target,
+            job_id=job_id,
+            error=str(e),
+        )
+        audit_log(
+            action="crew_report_failed",
+            user="rita_report",
+            target=target,
+            result="error",
+        )
+        clear_report_run(job_id)
+        raise
+    finally:
+        stop_drainer()
+
+    if findings.report is None:
+        raise RuntimeError(f"Report compilation did not produce a result for {target}")
+    report = findings.report
+
+    audit_log(
+        action="crew_report_completed",
+        user="rita_report",
+        target=target,
+        result="degraded" if degraded else "success",
+        overall_risk=report.overall_risk,
+        risk_items=len(report.risk_items),
+    )
+
+    clear_report_run(job_id)
+
+    return report

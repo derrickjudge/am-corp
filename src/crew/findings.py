@@ -19,7 +19,7 @@ collide. For now there's only ever one active scan at a time.
 """
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from src.tools.intel_tools import (
     CVEDetails,
@@ -28,6 +28,12 @@ from src.tools.intel_tools import (
     VirusTotalResult,
     assess_exploitation_risk,
 )
+
+if TYPE_CHECKING:
+    from src.agents.ivy_intel import IntelScanResult
+    from src.agents.randy_recon import ReconResult
+    from src.agents.rita_report import ReportResult
+    from src.agents.victor_vuln import VulnScanResult
 
 
 @dataclass
@@ -235,3 +241,56 @@ def get_intel_findings(job_id: str) -> IntelFindings | None:
 def clear_intel_run(job_id: str) -> None:
     """Remove intel findings after the job is complete."""
     _intel_store.pop(job_id, None)
+
+
+@dataclass
+class ReportFindings:
+    """Structured output from Rita's report-compilation crew."""
+
+    target: str
+    # Inputs from the other three agents, fed in at init_report_run(). Read by
+    # the tool wrapper since the LLM has no way to pass these complex objects.
+    recon_result: "ReconResult | None" = None
+    vuln_result: "VulnScanResult | None" = None
+    intel_result: "IntelScanResult | None" = None
+    report: "ReportResult | None" = None
+    # Rita has exactly one phase ("report"), tracked for consistency with the
+    # other findings stores and the degraded-fallback safety net.
+    completed: set[str] = field(default_factory=set)
+
+    def set_report(self, report: "ReportResult") -> None:
+        """Called by compile_report_tool once the report is compiled."""
+        self.report = report
+        self.completed.add("report")
+
+
+# In-memory store keyed by job_id, separate from the other stores above.
+_report_store: dict[str, ReportFindings] = {}
+
+
+def init_report_run(
+    job_id: str,
+    target: str,
+    recon_result: "ReconResult | None" = None,
+    vuln_result: "VulnScanResult | None" = None,
+    intel_result: "IntelScanResult | None" = None,
+) -> ReportFindings:
+    """Create a fresh report findings slot for a new scan job."""
+    findings = ReportFindings(
+        target=target,
+        recon_result=recon_result,
+        vuln_result=vuln_result,
+        intel_result=intel_result,
+    )
+    _report_store[job_id] = findings
+    return findings
+
+
+def get_report_findings(job_id: str) -> ReportFindings | None:
+    """Retrieve report findings for an active run. Returns None if not found."""
+    return _report_store.get(job_id)
+
+
+def clear_report_run(job_id: str) -> None:
+    """Remove report findings after the job is complete."""
+    _report_store.pop(job_id, None)

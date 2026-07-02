@@ -405,14 +405,23 @@ class AMCorpBot(commands.Bot):
 
                     # Rita compiles the final report and posts to #results
                     self.active_job["phase"] = "report"
-                    from src.agents.rita_report import get_rita
-                    rita = get_rita()
-                    report_result = await rita.run_report(
-                        target=target,
-                        recon_result=recon_result,
-                        vuln_result=vuln_result,
-                        intel_result=intel_result,
-                    )
+                    if settings.use_crewai:
+                        from src.crew.run import run_crew_report
+                        report_result = await run_crew_report(
+                            target,
+                            recon_result=recon_result,
+                            vuln_result=vuln_result,
+                            intel_result=intel_result,
+                        )
+                    else:
+                        from src.agents.rita_report import get_rita
+                        rita = get_rita()
+                        report_result = await rita.run_report(
+                            target=target,
+                            recon_result=recon_result,
+                            vuln_result=vuln_result,
+                            intel_result=intel_result,
+                        )
                     await _post_report_to_results(report_result)
 
             elif scan_type == "vuln":

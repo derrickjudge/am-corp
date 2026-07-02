@@ -9,10 +9,11 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.crew import intel_tools as intel_tools_mod
+from src.crew import report_tools as report_tools_mod
 from src.crew import run as run_mod
 from src.crew import tools as tools_mod
 from src.crew import vuln_tools as vuln_tools_mod
-from src.crew.findings import IntelFindings, ReconFindings, VulnFindings
+from src.crew.findings import IntelFindings, ReconFindings, ReportFindings, VulnFindings
 
 
 @pytest.mark.parametrize(
@@ -187,3 +188,31 @@ async def test_complete_intel_phases_skips_cve_when_no_cves(monkeypatch) -> None
 
     # Assert
     do_cve.assert_not_called()
+
+
+async def test_complete_report_phases_runs_when_missing(monkeypatch) -> None:
+    """The report degraded fallback compiles the report when not yet completed."""
+    # Arrange
+    findings = ReportFindings(target="example.com", completed=set())
+    do_compile_report = AsyncMock()
+    monkeypatch.setattr(report_tools_mod, "do_compile_report", do_compile_report)
+
+    # Act
+    await run_mod._complete_report_phases_deterministically(findings)
+
+    # Assert
+    do_compile_report.assert_awaited_once_with("example.com", None, None, None)
+
+
+async def test_complete_report_phases_skips_when_already_done(monkeypatch) -> None:
+    """The report degraded fallback is a no-op if the agent already compiled it."""
+    # Arrange
+    findings = ReportFindings(target="example.com", completed={"report"})
+    do_compile_report = AsyncMock()
+    monkeypatch.setattr(report_tools_mod, "do_compile_report", do_compile_report)
+
+    # Act
+    await run_mod._complete_report_phases_deterministically(findings)
+
+    # Assert
+    do_compile_report.assert_not_called()

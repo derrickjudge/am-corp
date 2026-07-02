@@ -12,10 +12,10 @@ Hosting: local      # local | personal-infra | managed-cloud
 ```
 
 `demo` rigor (see global CLAUDE.md) requires: tests for core logic, mypy + ruff
-passing, and full type hints + docstrings. `src/crew/` (Randy, Victor, and
-Ivy's CrewAI conversion) is at demo standard: tests, clean mypy/ruff. **Known
-gap:** the rest of the codebase (hand-rolled agents, Discord bot, tools) still
-needs the same pass. New code from here should meet demo rigor.
+passing, and full type hints + docstrings. `src/crew/` (all four agents'
+CrewAI conversion) is at demo standard: tests, clean mypy/ruff. **Known gap:**
+the rest of the codebase (hand-rolled agents, Discord bot, tools) still needs
+the same pass. New code from here should meet demo rigor.
 
 ---
 
@@ -111,9 +111,13 @@ am-corp/
 | Randy Recon | 🔍 | `src/agents/randy_recon.py` | DNS, whois, nmap recon | ✅ Done | ✅ Converted (`src/crew/tools.py`, `run_crew_recon`) |
 | Victor Vuln | ⚠️ | `src/agents/victor_vuln.py` | Nuclei scans, CVE lookup | ✅ Done | ✅ Converted (`src/crew/vuln_tools.py`, `run_crew_vuln`) |
 | Ivy Intel | 🧠 | `src/agents/ivy_intel.py` | Shodan, VirusTotal, EPSS | ✅ Done | ✅ Converted (`src/crew/intel_tools.py`, `run_crew_intel`) |
-| Rita Report | 📊 | `src/agents/rita_report.py` | Aggregation and reporting | 🔄 Partial | ⏳ Not started |
+| Rita Report | 📊 | `src/agents/rita_report.py` | Aggregation and reporting | ✅ Done | ✅ Converted (`src/crew/report_tools.py`, `run_crew_report`) |
 
-Rita has a personality YAML and base class but **report generation is not implemented** (Phase 3). Do not treat her as a working agent.
+Rita compiles Randy/Victor/Ivy's findings into a prioritized report with a
+Gemini-generated executive summary, posted as embeds to `#results` at the end
+of a `full` scan. She has no tool-choice decision to make (aggregation +
+one summary, not multi-tool orchestration), so her CrewAI conversion is a
+single-tool wrapper — see `src/crew/report_tools.py`'s module docstring.
 
 CrewAI conversion is gated behind `USE_CREWAI=true` (see Environment & Config
 below); with it unset, all agents run their original hand-rolled path.
@@ -125,8 +129,8 @@ below); with it unset, all agents run their original hand-rolled path.
 | Phase | Status | Notes |
 |-------|--------|-------|
 | 1 – Infrastructure | ✅ Complete | Podman, Discord bot, personality system, preflight checks |
-| 2 – Agents | ✅ Complete | Randy, Victor, Ivy, thoughts channel, casual chat, security news. All three also have a CrewAI-agentic path (`src/crew/`). |
-| 3 – Rita + Reporting | 🔄 In Progress | Rita skeleton exists; full report generation not built |
+| 2 – Agents | ✅ Complete | Randy, Victor, Ivy, thoughts channel, casual chat, security news. All four agents (plus Rita, Phase 3) also have a CrewAI-agentic path (`src/crew/`). |
+| 3 – Rita + Reporting | ✅ Complete | Full report generation, prioritized risk items, executive summary, posted to `#results` |
 | 4 – n8n Workflows | 🔄 Scaffolded | Framework wired up but untested end-to-end |
 | 5 – Sub-agents / SaaS | ⏳ Not Started | Out of scope for this demo |
 
@@ -139,7 +143,7 @@ below); with it unset, all agents run their original hand-rolled path.
 - **Required to boot:** `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, `GEMINI_API_KEY`, all channel IDs, all webhook URLs.
 - **Optional (degrade gracefully):** `SHODAN_API_KEY`, `VIRUSTOTAL_API_KEY`, `SECURITYTRAILS_API_KEY`, per-agent bot tokens.
 - Multi-bot mode (each agent appears as its own Discord user) requires `DISCORD_BOT_TOKEN_RANDY`, `_VICTOR`, `_IVY`, `_RITA`.
-- **Crew LLM routing:** the CrewAI crew path (Randy, Victor, and Ivy today) uses `crew_llm_model` — `LLM_MODEL` if set, else `gemini/<GEMINI_MODEL>`. To run the crew on a local Ollama model (no quota) set `LLM_MODEL=ollama/qwen2.5` (or `ollama/llama3.1` — must support tool calling) and `LLM_API_BASE=http://host.containers.internal:11434`; on the host run Ollama bound to `0.0.0.0` (loopback-only refuses the container). The rest of the app (casual chat, mentions, hand-rolled agents) stays on Gemini. See `src/crew/llm.py`.
+- **Crew LLM routing:** the CrewAI crew path (all four agents) uses `crew_llm_model` — `LLM_MODEL` if set, else `gemini/<GEMINI_MODEL>`. To run the crew on a local Ollama model (no quota) set `LLM_MODEL=ollama/qwen2.5` (or `ollama/llama3.1` — must support tool calling) and `LLM_API_BASE=http://host.containers.internal:11434`; on the host run Ollama bound to `0.0.0.0` (loopback-only refuses the container). The rest of the app (casual chat, mentions, hand-rolled agents) stays on Gemini. See `src/crew/llm.py`.
 
 ---
 
