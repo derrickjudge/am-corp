@@ -342,11 +342,17 @@ class AMCorpBot(commands.Bot):
                     # Chain to Victor for vulnerability scanning
                     self.active_job["phase"] = "vuln"
 
-                    from src.agents.victor_vuln import get_victor
-                    victor = get_victor()
-
-                    # Pass open ports from recon to Victor
-                    vuln_result = await victor.run_vuln_scan(target, ports=ports, verbose=verbose)
+                    if settings.use_crewai:
+                        from src.crew.run import run_crew_vuln
+                        vuln_result = await run_crew_vuln(
+                            target, ports=ports, verbose=verbose
+                        )
+                    else:
+                        from src.agents.victor_vuln import get_victor
+                        victor = get_victor()
+                        vuln_result = await victor.run_vuln_scan(
+                            target, ports=ports, verbose=verbose
+                        )
 
                     self.active_job["findings"]["vuln"] = {
                         "critical": vuln_result.critical_count,
@@ -406,9 +412,13 @@ class AMCorpBot(commands.Bot):
                 # Run Victor's vulnerability scan directly
                 self.active_job["phase"] = "vuln"
 
-                from src.agents.victor_vuln import get_victor
-                victor = get_victor()
-                vuln_result = await victor.run_vuln_scan(target, verbose=verbose)
+                if settings.use_crewai:
+                    from src.crew.run import run_crew_vuln
+                    vuln_result = await run_crew_vuln(target, verbose=verbose)
+                else:
+                    from src.agents.victor_vuln import get_victor
+                    victor = get_victor()
+                    vuln_result = await victor.run_vuln_scan(target, verbose=verbose)
 
                 self.active_job["findings"]["vuln"] = {
                     "critical": vuln_result.critical_count,

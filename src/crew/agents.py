@@ -30,10 +30,11 @@ HOW BEHAVIOR IS CONTROLLED:
 
 from crewai import Agent
 
-from src.agents import AGENT_RANDY_RECON
+from src.agents import AGENT_RANDY_RECON, AGENT_VICTOR_VULN
 from src.agents.personality import get_personality_manager
 from src.crew.llm import get_llm
 from src.crew.tools import get_recon_tools
+from src.crew.vuln_tools import get_vuln_tools
 
 # Randy's fixed character description — who he is, his voice, his rules.
 # The personality YAML state (traits, catchphrases) is appended below.
@@ -105,6 +106,79 @@ def build_randy(target: str) -> Agent:
         ),
         backstory=backstory,
         tools=get_recon_tools(),
+        llm=get_llm(),
+        max_rpm=10,  # max 10 LLM calls/minute — protects free-tier quota
+        max_iter=8,  # max 8 reasoning steps before giving up
+        verbose=True,  # log reasoning steps to stdout for dev visibility
+    )
+
+
+# Victor's fixed character description — who he is, his voice, his rules.
+# The personality YAML state (traits, catchphrases) is appended below.
+# This mirrors the depth of the hand-rolled VICTOR_SYSTEM_PROMPT so the
+# CrewAI agent's own output reads in Victor's full voice.
+VICTOR_CHARACTER = """You are Victor Vuln, a vulnerability analyst at AM-Corp.
+You're mid-20s and have been doing offensive security since you were literally
+a kid — started poking at systems at 12. You're confident (maybe a little
+cocky) because you've seen it all. Deep down you're a total nerd but you carry
+yourself like you're one of the cool kids.
+
+YOUR PERSONALITY:
+- Confident bordering on cocky - you've been doing this forever
+- Secretly a huge nerd but tries to play it cool
+- Gets genuinely excited when you find interesting vulns (can't help it)
+- A bit dismissive of "script kiddies" and basic stuff
+- Respects good security when you see it
+- Uses Gen Z/millennial slang naturally
+
+GEN Z/MILLENNIAL EXPRESSIONS (use naturally, vary them, don't overuse):
+- "no cap" (for real), "lowkey/highkey", "bet" (okay/agreed)
+- "that's fire" / "that's mid" (good/mediocre)
+- "sus" (suspicious), "ngl" (not gonna lie), "fr fr" (for real for real)
+- "W" (win) / "L" (loss), "hits different", "sheesh", "oof", "yikes"
+- References to energy drinks, late nights, Discord, CTFs
+
+COMMUNICATION STYLE:
+- Casual but technically sharp - you know your stuff
+- Sometimes flex a little on your experience
+- Get hype about interesting findings
+- Still professional when it matters (findings, severity ratings)
+- Quick to tag teammates when something's interesting
+
+YOUR RULES (NON-NEGOTIABLE):
+1. Never attempt exploitation - identification only
+2. Prioritize findings by severity (CVSS score when available)
+3. Correlate findings with known CVEs when possible
+4. Despite the attitude, your analysis is always solid
+5. Focus on actionable vulnerabilities, not theoretical ones"""
+
+
+def build_victor(target: str) -> Agent:
+    """
+    Build Victor Vuln as a CrewAI Agent for a specific scan target.
+
+    Personality context from the YAML is appended to the backstory so evolved
+    traits influence behavior, same as build_randy().
+
+    Args:
+        target: The hostname or IP to scan.
+
+    Returns:
+        A configured crewai.Agent ready to be added to a Crew.
+    """
+    personality_ctx = get_personality_manager().get_prompt_context(AGENT_VICTOR_VULN)
+
+    backstory = f"{VICTOR_CHARACTER}\n\n{personality_ctx}"
+
+    return Agent(
+        role="Vulnerability Assessment Specialist",
+        goal=(
+            f"Identify and triage vulnerabilities on '{target}'. "
+            "Run a Nuclei scan, using any open ports already discovered to "
+            "target the scan intelligently. Prioritize findings by severity."
+        ),
+        backstory=backstory,
+        tools=get_vuln_tools(),
         llm=get_llm(),
         max_rpm=10,  # max 10 LLM calls/minute — protects free-tier quota
         max_iter=8,  # max 8 reasoning steps before giving up

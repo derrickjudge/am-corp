@@ -80,3 +80,78 @@ def get_findings(job_id: str) -> ReconFindings | None:
 def clear_run(job_id: str) -> None:
     """Remove findings after the job is complete."""
     _store.pop(job_id, None)
+
+
+@dataclass
+class VulnFindings:
+    """Structured output from Victor's vulnerability scan crew."""
+
+    target: str
+    # Open ports from Randy's recon, fed in at init_vuln_run(). Read by the
+    # nuclei tool wrapper to drive smart template selection.
+    ports: list[dict[str, Any]] = field(default_factory=list)
+    findings: list[dict[str, Any]] = field(default_factory=list)
+    templates_used: list[str] = field(default_factory=list)
+    # Which phases have been attempted, so a degraded (no-LLM) fallback only
+    # runs the phases the agent did not reach.
+    completed: set[str] = field(default_factory=set)
+
+    def set_findings(
+        self, findings: list[dict[str, Any]], templates: list[str]
+    ) -> None:
+        """Called by nuclei_scan_tool after a scan run."""
+        self.findings = findings
+        self.templates_used = templates
+        self.completed.add("nuclei")
+
+    def _count(self, severity: str) -> int:
+        return sum(1 for f in self.findings if f.get("severity") == severity)
+
+    @property
+    def critical_count(self) -> int:
+        return self._count("critical")
+
+    @property
+    def high_count(self) -> int:
+        return self._count("high")
+
+    @property
+    def medium_count(self) -> int:
+        return self._count("medium")
+
+    @property
+    def low_count(self) -> int:
+        return self._count("low")
+
+    @property
+    def info_count(self) -> int:
+        return sum(1 for f in self.findings if f.get("severity") in ("info", "unknown"))
+
+    @property
+    def cve_ids(self) -> list[str]:
+        return [f["cve_id"] for f in self.findings if f.get("cve_id")]
+
+
+# In-memory store keyed by job_id, separate from the recon store above since
+# the two dataclasses are shaped differently and a full scan runs both in the
+# same process with distinct job_ids.
+_vuln_store: dict[str, VulnFindings] = {}
+
+
+def init_vuln_run(
+    job_id: str, target: str, ports: list[dict[str, Any]] | None = None
+) -> VulnFindings:
+    """Create a fresh vuln findings slot for a new scan job."""
+    findings = VulnFindings(target=target, ports=ports or [])
+    _vuln_store[job_id] = findings
+    return findings
+
+
+def get_vuln_findings(job_id: str) -> VulnFindings | None:
+    """Retrieve vuln findings for an active run. Returns None if not found."""
+    return _vuln_store.get(job_id)
+
+
+def clear_vuln_run(job_id: str) -> None:
+    """Remove vuln findings after the job is complete."""
+    _vuln_store.pop(job_id, None)

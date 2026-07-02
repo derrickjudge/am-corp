@@ -4,13 +4,14 @@ Covers quota-error detection and the deterministic degraded fallback that
 completes recon phases without the LLM.
 """
 
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 from src.crew import run as run_mod
 from src.crew import tools as tools_mod
+from src.crew import vuln_tools as vuln_tools_mod
+from src.crew.findings import ReconFindings, VulnFindings
 
 
 @pytest.mark.parametrize(
@@ -49,7 +50,7 @@ def test_should_degrade_false(message: str) -> None:
 async def test_complete_phases_runs_only_missing(monkeypatch) -> None:
     """The degraded fallback runs only the phases the agent did not reach."""
     # Arrange — DNS already done; WHOIS and ports still pending
-    findings = SimpleNamespace(target="example.com", completed={"dns"})
+    findings = ReconFindings(target="example.com", completed={"dns"})
     do_dns = AsyncMock()
     do_whois = AsyncMock()
     do_ports = AsyncMock()
@@ -69,7 +70,7 @@ async def test_complete_phases_runs_only_missing(monkeypatch) -> None:
 async def test_complete_phases_runs_all_when_nothing_done(monkeypatch) -> None:
     """With no phases completed, the fallback runs all three in order."""
     # Arrange
-    findings = SimpleNamespace(target="example.com", completed=set())
+    findings = ReconFindings(target="example.com", completed=set())
     do_dns = AsyncMock()
     do_whois = AsyncMock()
     do_ports = AsyncMock()
@@ -84,3 +85,33 @@ async def test_complete_phases_runs_all_when_nothing_done(monkeypatch) -> None:
     do_dns.assert_awaited_once_with("example.com")
     do_whois.assert_awaited_once_with("example.com")
     do_ports.assert_awaited_once_with("example.com")
+
+
+async def test_complete_vuln_phases_runs_when_missing(monkeypatch) -> None:
+    """The vuln degraded fallback runs the nuclei phase when not yet completed."""
+    # Arrange
+    findings = VulnFindings(
+        target="example.com", ports=[{"port": 443}], completed=set()
+    )
+    do_nuclei_scan = AsyncMock()
+    monkeypatch.setattr(vuln_tools_mod, "do_nuclei_scan", do_nuclei_scan)
+
+    # Act
+    await run_mod._complete_vuln_phases_deterministically(findings)
+
+    # Assert
+    do_nuclei_scan.assert_awaited_once_with("example.com", [{"port": 443}])
+
+
+async def test_complete_vuln_phases_skips_when_already_done(monkeypatch) -> None:
+    """The vuln degraded fallback is a no-op if the agent already ran the scan."""
+    # Arrange
+    findings = VulnFindings(target="example.com", ports=[], completed={"nuclei"})
+    do_nuclei_scan = AsyncMock()
+    monkeypatch.setattr(vuln_tools_mod, "do_nuclei_scan", do_nuclei_scan)
+
+    # Act
+    await run_mod._complete_vuln_phases_deterministically(findings)
+
+    # Assert
+    do_nuclei_scan.assert_not_called()

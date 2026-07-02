@@ -347,23 +347,32 @@ class PreflightChecker:
         )
 
     def check_env_crew_llm(self) -> None:
-        """Check the CrewAI crew LLM routing (Gemini vs a local Ollama model)."""
-        from src.utils.config import settings
+        """Check the CrewAI crew LLM routing (Gemini vs a local Ollama model).
 
-        model = settings.crew_llm_model
-        if not settings.crew_llm_is_ollama:
+        Reads raw env vars directly (like the other check_env_* methods) rather
+        than importing src.utils.config — that import fails here because this
+        script runs as `python src/preflight.py`, which puts src/ itself (not
+        the project root) on sys.path.
+        """
+        llm_model = os.getenv("LLM_MODEL", "")
+        llm_api_base = os.getenv("LLM_API_BASE", "")
+        gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
+        model = llm_model or f"gemini/{gemini_model}"
+        is_ollama = model.startswith("ollama/")
+
+        if not is_ollama:
             self._add_result(
                 "config.crew_llm",
                 CheckStatus.PASS,
                 f"Crew LLM routed to Gemini: {model}",
                 {"model": model},
             )
-        elif settings.llm_api_base:
+        elif llm_api_base:
             self._add_result(
                 "config.crew_llm",
                 CheckStatus.PASS,
-                f"Crew LLM routed to Ollama: {model} @ {settings.llm_api_base}",
-                {"model": model, "api_base": settings.llm_api_base},
+                f"Crew LLM routed to Ollama: {model} @ {llm_api_base}",
+                {"model": model, "api_base": llm_api_base},
             )
         else:
             self._add_result(
